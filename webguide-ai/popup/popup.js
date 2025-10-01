@@ -1,5 +1,6 @@
 const activateButton = document.getElementById('activate-overlay');
 const overlayDemoButton = document.getElementById('run-overlay-demo');
+const domSnapshotButton = document.getElementById('run-dom-snapshot');
 const statusMessage = document.getElementById('status-message');
 
 const setStatus = (message, isError = false) => {
@@ -98,4 +99,37 @@ const runOverlayDemo = async () => {
 
 if (overlayDemoButton) {
   overlayDemoButton.addEventListener('click', runOverlayDemo);
+}
+
+const runDomSnapshot = async () => {
+  const tab = await getActiveTab();
+  if (!tab) {
+    return;
+  }
+
+  setStatus('Collecting clickable elements...');
+
+  try {
+    const response = await sendMessageToTab(tab.id, { type: 'wga-run-dom-snapshot' });
+
+    if (response && response.ok) {
+      const rawCount = typeof response.rawCount === 'number' ? response.rawCount : 'unknown';
+      const llmCount = typeof response.llmCount === 'number' ? response.llmCount : 'unknown';
+      setStatus(`Snapshot captured (raw: ${rawCount}, llm: ${llmCount})`);
+    } else {
+      setStatus('DOM snapshot completed with notices.', true);
+    }
+  } catch (error) {
+    if (/Receiving end does not exist/i.test(error.message)) {
+      setStatus('Inject overlay/content script before running snapshot.', true);
+      return;
+    }
+
+    console.error('WebGuide AI: DOM snapshot failed.', error);
+    setStatus('DOM snapshot failed. See console for details.', true);
+  }
+};
+
+if (domSnapshotButton) {
+  domSnapshotButton.addEventListener('click', runDomSnapshot);
 }

@@ -13,7 +13,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["styles/overlay.css", "overlay.js"],
+      "resources": ["styles/overlay.css", "overlay.js", "dom-snapshot.js"],
       "matches": ["<all_urls>"]
     }
   ]

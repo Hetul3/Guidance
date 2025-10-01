@@ -55,6 +55,7 @@ agents.md
 - Popup logic guards against unsupported schemes (e.g., `chrome://`) and surfaces status feedback in the UI.
 - `overlay.js` builds the Shadow DOM overlay system with reusable pulse and highlight utilities and uses staged spawn timing to eliminate animation hitching.
 - Popup UI offers separate controls for feature activation vs. overlay demonstrations to keep modules independently testable.
+- `dom-snapshot.js` provides the clickable-element inventory with MutationObserver-backed refresh tracking, returning both raw developer metadata and LLM-friendly semantic views, maintaining a live element registry for ID lookups, and prioritising high-value elements (≤50) for the LLM; content script logs snapshots on activation plus on-demand.
 
 ## Conventions & Rules  
 - Every directory must include a README (or directory-level `agents.md`) that reflects its current responsibilities; update it whenever substantial changes land in that folder.  
