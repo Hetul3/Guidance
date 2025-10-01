@@ -41,6 +41,7 @@ utils.js
 styles/
 overlay.css
 chat.css
+chat.css
 popup/
 popup.html
 popup.js
@@ -51,13 +52,13 @@ agents.md
 - Base Chrome extension scaffold in `webguide-ai/` with Manifest V3, background service worker, and popup registration.  
 - Popup UI (`popup/popup.html`, `popup/popup.js`) renders a greeting and injects the active tab content script on demand.  
 - `content-script.js` injects a minimal overlay, exposes messaging hooks, and loads overlay demos on-demand for isolated testing.  
-- `styles/overlay.css` supplies both the legacy banner style and the Shadow DOM visuals for pulses, highlights, and tooltips (sequential triple pulses driven via CSS classes).
-- Popup logic guards against unsupported schemes (e.g., `chrome://`) and surfaces status feedback in the UI.
-- `overlay.js` builds the Shadow DOM overlay system with reusable pulse and highlight utilities and uses staged spawn timing to eliminate animation hitching.
-- Popup UI offers separate controls for feature activation vs. overlay demonstrations to keep modules independently testable.
-- `dom-snapshot.js` provides the clickable-element inventory with MutationObserver-backed refresh tracking, returning both raw developer metadata and LLM-friendly semantic views, maintaining a live element registry for ID lookups, and prioritising high-value elements (≤50) for the LLM; content script logs snapshots on activation plus on-demand.
-- `storage.js` offers chrome.storage helpers for API key persistence and other configuration values.
-- `llm.js` wraps Gemini 2.0 Flash requests with stored API key access, deterministic configuration, and typed error handling for missing/invalid credentials.
+- `styles/overlay.css` supplies both the legacy banner style and the Shadow DOM visuals for pulses, highlights, and tooltips.  
+- Popup logic guards against unsupported schemes (e.g., `chrome://`) and surfaces status feedback in the UI.  
+- `overlay.js` builds the Shadow DOM overlay system with reusable pulse and highlight utilities.  
+- Popup UI offers separate controls for feature activation vs. overlay demonstrations to keep modules independently testable.  
+- `dom-snapshot.js` provides the clickable-element inventory with MutationObserver-backed refresh tracking, returning both raw developer metadata and LLM-friendly semantic views, maintaining a live element registry for ID lookups, and prioritising high-value elements (≤50) for the LLM; content script logs snapshots on activation plus on-demand.  
+- `storage.js` offers chrome.storage helpers for API key persistence and other configuration values.  
+- `llm.js` wraps Gemini 2.0 Flash requests with stored API key access, deterministic configuration, and typed error handling for missing/invalid credentials.  
 - Popup bundles Markdown rendering (`marked-lite.js`), sanitisation (`dompurify-lite.js`), and code highlighting (`highlight-lite.js`) to present Gemini responses with full formatting inside the UI.
 
 ## Conventions & Rules  
