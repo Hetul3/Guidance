@@ -13,7 +13,18 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["styles/overlay.css", "overlay.js", "dom-snapshot.js"],
+      "resources": [
+        "styles/overlay.css",
+        "styles/chat.css",
+        "styles/highlight.css",
+        "overlay.js",
+        "dom-snapshot.js",
+        "storage.js",
+        "llm.js",
+        "vendor/marked-lite.js",
+        "vendor/dompurify-lite.js",
+        "vendor/highlight-lite.js"
+      ],
       "matches": ["<all_urls>"]
     }
   ]

@@ -56,6 +56,9 @@ agents.md
 - `overlay.js` builds the Shadow DOM overlay system with reusable pulse and highlight utilities and uses staged spawn timing to eliminate animation hitching.
 - Popup UI offers separate controls for feature activation vs. overlay demonstrations to keep modules independently testable.
 - `dom-snapshot.js` provides the clickable-element inventory with MutationObserver-backed refresh tracking, returning both raw developer metadata and LLM-friendly semantic views, maintaining a live element registry for ID lookups, and prioritising high-value elements (≤50) for the LLM; content script logs snapshots on activation plus on-demand.
+- `storage.js` offers chrome.storage helpers for API key persistence and other configuration values.
+- `llm.js` wraps Gemini 2.0 Flash requests with stored API key access, deterministic configuration, and typed error handling for missing/invalid credentials.
+- Popup bundles Markdown rendering (`marked-lite.js`), sanitisation (`dompurify-lite.js`), and code highlighting (`highlight-lite.js`) to present Gemini responses with full formatting inside the UI.
 
 ## Conventions & Rules  
 - Every directory must include a README (or directory-level `agents.md`) that reflects its current responsibilities; update it whenever substantial changes land in that folder.  

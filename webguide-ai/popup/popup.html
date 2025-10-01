@@ -4,71 +4,340 @@
     <meta charset="utf-8">
     <title>WebGuide AI</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="../styles/chat.css">
+    <link rel="stylesheet" href="../styles/highlight.css">
     <style>
+      :root {
+        color-scheme: light dark;
+        --bg-gradient: linear-gradient(155deg, #eff6ff 0%, #f8f0ff 45%, #ffffff 100%);
+        --bg-gradient-dark: linear-gradient(155deg, #111827 0%, #1f2937 45%, #0f172a 100%);
+        --card-bg: rgba(255, 255, 255, 0.92);
+        --card-bg-dark: rgba(15, 23, 42, 0.9);
+        --card-border: rgba(148, 163, 184, 0.35);
+        --card-border-dark: rgba(148, 163, 184, 0.25);
+        --card-shadow: 0 16px 40px rgba(99, 102, 241, 0.15);
+        --card-shadow-dark: 0 18px 46px rgba(8, 47, 73, 0.32);
+        --text-primary: #0f172a;
+        --text-primary-dark: #f8fafc;
+        --text-secondary: #475569;
+        --text-secondary-dark: #cbd5f5;
+        --surface: rgba(248, 250, 252, 0.85);
+        --surface-dark: rgba(17, 24, 39, 0.85);
+        --accent: #6366f1;
+        --accent-strong: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #ec4899 100%);
+        --placeholder: rgba(148, 163, 184, 0.75);
+        --placeholder-dark: rgba(148, 163, 184, 0.65);
+        --radius-large: 18px;
+        --radius-medium: 14px;
+        --transition: 180ms ease;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        body {
+          background: var(--bg-gradient-dark);
+          color: var(--text-primary-dark);
+        }
+
+        main {
+          background: var(--card-bg-dark);
+          border: 1px solid var(--card-border-dark);
+          box-shadow: var(--card-shadow-dark);
+        }
+
+        .card {
+          background: var(--surface-dark);
+          border: 1px solid rgba(148, 163, 184, 0.25);
+        }
+
+        input,
+        textarea {
+          background: rgba(17, 24, 39, 0.88);
+          color: var(--text-primary-dark);
+          border-color: rgba(101, 113, 133, 0.45);
+        }
+
+        input::placeholder,
+        textarea::placeholder {
+          color: var(--placeholder-dark);
+        }
+
+        .ghost {
+          color: var(--text-primary-dark);
+          border-color: rgba(148, 163, 184, 0.35);
+          background: rgba(148, 163, 184, 0.12);
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
       body {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         margin: 0;
-        padding: 16px;
-        width: 220px;
-        background: #ffffff;
-        color: #1f2933;
+        padding: 0;
+        width: 360px;
+        min-height: 100vh;
+        background: var(--bg-gradient);
+        color: var(--text-primary);
+        overflow-y: auto;
+      }
+
+      main {
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        padding: 20px;
+        min-height: 100%;
+        background: var(--card-bg);
+        border-radius: var(--radius-large);
+        border: 1px solid var(--card-border);
+        box-shadow: var(--card-shadow);
+        backdrop-filter: blur(18px) saturate(140%);
+        animation: fadeSlide 240ms ease;
+      }
+
+      header {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
       }
 
       h1 {
-        font-size: 18px;
-        margin-top: 0;
-        margin-bottom: 12px;
+        margin: 0;
+        font-size: 20px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        color: inherit;
       }
 
-      .button-group {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        margin-bottom: 12px;
+      .intro {
+        font-size: 13px;
+        color: inherit;
+        opacity: 0.75;
       }
 
-      button {
-        cursor: pointer;
-        border: none;
-        background: #2563eb;
+      .actions {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 10px;
+      }
+
+      .primary {
+        background: var(--accent-strong);
         color: #ffffff;
-        padding: 10px 14px;
-        border-radius: 6px;
+        border: none;
+      }
+
+      .ghost,
+      .primary {
+        border-radius: 12px;
+        padding: 11px 14px;
         font-size: 14px;
         font-weight: 600;
+        cursor: pointer;
+        transition: transform var(--transition), box-shadow var(--transition), background var(--transition);
       }
 
-      button:hover {
-        background: #1d4ed8;
+      .primary:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 12px 24px rgba(99, 102, 241, 0.25);
       }
 
-      button.secondary {
-        background: #f3f4f6;
-        color: #1f2933;
-        border: 1px solid #d1d5db;
+      .ghost {
+        background: rgba(99, 102, 241, 0.08);
+        color: var(--text-primary);
+        border: 1px solid rgba(99, 102, 241, 0.18);
       }
 
-      button.secondary:hover {
-        background: #e5e7eb;
+      .ghost:hover {
+        transform: translateY(-1px);
+        background: rgba(99, 102, 241, 0.12);
+      }
+
+      .card {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 16px;
+        border-radius: var(--radius-medium);
+        background: var(--surface);
+        border: 1px solid rgba(148, 163, 184, 0.25);
+      }
+
+      .card-header {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .card-title {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: inherit;
+      }
+
+      .card-subtitle {
+        font-size: 13px;
+        color: var(--text-secondary);
+        margin: 0;
+      }
+
+      label {
+        font-size: 13px;
+        font-weight: 600;
+        color: inherit;
+      }
+
+      input,
+      textarea {
+        width: 100%;
+        border-radius: 12px;
+        border: 1px solid rgba(148, 163, 184, 0.35);
+        background: rgba(248, 250, 252, 0.92);
+        padding: 11px 12px;
+        font-size: 14px;
+        color: inherit;
+        transition: border var(--transition), box-shadow var(--transition), background var(--transition);
+      }
+
+      input:focus,
+      textarea:focus {
+        outline: none;
+        border-color: rgba(99, 102, 241, 0.45);
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18);
+        background: rgba(255, 255, 255, 0.96);
+      }
+
+      textarea {
+        min-height: 100px;
+        resize: vertical;
+      }
+
+      input::placeholder,
+      textarea::placeholder {
+        color: var(--placeholder);
+      }
+
+      .help-text {
+        font-size: 12px;
+        color: var(--text-secondary);
+        margin: 0;
+      }
+
+      .status-message {
+        font-size: 13px;
+        color: #10b981;
+        margin: 0;
+      }
+
+      .status-message[hidden] {
+        display: none;
+      }
+
+      .chat-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .chat-status {
+        font-size: 12px;
+        color: var(--text-secondary);
+        white-space: nowrap;
+      }
+
+      .response {
+        border-radius: 12px;
+        padding: 12px;
+        background: rgba(99, 102, 241, 0.08);
+        border: 1px solid rgba(99, 102, 241, 0.16);
+        font-size: 14px;
+        color: inherit;
+        line-height: 1.55;
+        max-height: 220px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+      }
+
+      .response.empty {
+        color: var(--text-secondary);
+        font-style: italic;
       }
 
       #status-message {
         font-size: 13px;
         min-height: 18px;
         margin: 0;
+        color: var(--text-secondary);
+      }
+
+      @keyframes fadeSlide {
+        from {
+          transform: translateY(12px);
+          opacity: 0;
+        }
+        to {
+          transform: translateY(0);
+          opacity: 1;
+        }
       }
     </style>
   </head>
   <body>
     <main>
-      <h1>Hello from WebGuide AI!</h1>
-      <div class="button-group">
-        <button id="activate-overlay" type="button">Activate Overlay</button>
-        <button id="run-overlay-demo" type="button" class="secondary">Run Overlay Demo</button>
-        <button id="run-dom-snapshot" type="button" class="secondary">Run DOM Snapshot</button>
-      </div>
+      <header>
+        <h1>WebGuide AI Control Center</h1>
+        <p class="intro">Run diagnostics, manage Gemini access, and sanity-check responses before deeper automation.</p>
+      </header>
+
+      <section class="card">
+        <div class="card-header">
+          <h2 class="card-title">Quick Actions</h2>
+          <p class="card-subtitle">Inject tooling and run visual demos without leaving the popup.</p>
+        </div>
+        <div class="actions">
+          <button id="activate-overlay" type="button" class="primary">Activate Overlay</button>
+          <button id="run-overlay-demo" type="button" class="ghost">Run Overlay Demo</button>
+          <button id="run-dom-snapshot" type="button" class="ghost">Run DOM Snapshot</button>
+        </div>
+      </section>
+
+      <section class="card" aria-live="polite">
+        <div class="card-header">
+          <h2 class="card-title">Gemini Access</h2>
+          <p class="card-subtitle">Store your Gemini API key locally. The extension never transmits it elsewhere.</p>
+        </div>
+        <label for="gemini-api-key">API Key</label>
+        <input id="gemini-api-key" name="gemini-api-key" type="password" autocomplete="off" placeholder="Enter key" />
+        <p class="help-text">Tip: use a dedicated Gemini key for browser tooling. Keys persist across reloads.</p>
+        <button id="save-api-key" type="button" class="ghost">Save Key</button>
+        <p id="api-key-status" class="status-message" hidden></p>
+      </section>
+
+      <section class="card" aria-live="polite">
+        <div class="card-header">
+          <h2 class="card-title">Gemini Test Chat</h2>
+          <p class="card-subtitle">Send a quick prompt to confirm connectivity before running automated flows.</p>
+        </div>
+        <label for="gemini-user-message">Message</label>
+        <textarea id="gemini-user-message" placeholder="Ask Gemini something"></textarea>
+        <div class="chat-footer">
+          <button id="send-gemini-message" type="button" class="ghost">Send</button>
+          <span id="gemini-chat-status" class="chat-status"></span>
+        </div>
+        <div id="gemini-response" class="response chat-markdown empty">Model responses appear here.</div>
+      </section>
+
       <p id="status-message" role="status" aria-live="polite"></p>
     </main>
+    <script src="../vendor/marked-lite.js"></script>
+    <script src="../vendor/dompurify-lite.js"></script>
+    <script src="../vendor/highlight-lite.js"></script>
     <script type="module" src="popup.js"></script>
   </body>
 </html>
