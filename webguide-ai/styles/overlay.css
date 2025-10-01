@@ -1,0 +1,121 @@
+.wga-overlay-root {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.wga-pulse {
+  position: absolute;
+  border-radius: 50%;
+  border: 2px solid rgba(239, 68, 68, 0.9);
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.55);
+  opacity: 0;
+  transform: scale(0.3);
+  transform-origin: center;
+  will-change: transform, opacity;
+  pointer-events: none;
+}
+
+.wga-pulse--animating {
+  animation: wga-pulse-grow 0.6s ease-out forwards;
+  animation-fill-mode: forwards;
+}
+
+@keyframes wga-pulse-grow {
+  0% {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+  30% {
+    transform: scale(0.7);
+    opacity: 0.9;
+  }
+  70% {
+    transform: scale(1.05);
+    opacity: 0.4;
+  }
+  100% {
+    transform: scale(1.18);
+    opacity: 0;
+  }
+}
+
+.wga-highlight {
+  position: absolute;
+  border: 3px solid rgba(250, 204, 21, 0.95);
+  border-radius: 10px;
+  box-shadow: 0 0 18px rgba(250, 204, 21, 0.8);
+  animation: wga-highlight-glow 1.6s ease-in-out infinite alternate;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+
+@keyframes wga-highlight-glow {
+  0% {
+    box-shadow: 0 0 12px rgba(250, 204, 21, 0.6);
+  }
+  100% {
+    box-shadow: 0 0 20px rgba(250, 204, 21, 0.9);
+  }
+}
+
+.wga-tooltip {
+  position: absolute;
+  max-width: 240px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(17, 24, 39, 0.95);
+  color: #f9fafb;
+  font-size: 13px;
+  line-height: 1.4;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.35);
+  transform-origin: center;
+  pointer-events: none;
+  text-align: center;
+}
+
+.wga-tooltip::after {
+  content: '';
+  position: absolute;
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+}
+
+.wga-tooltip[data-position='above'] {
+  transform: translate(-50%, -100%);
+}
+
+.wga-tooltip[data-position='above']::after {
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-top: 8px solid rgba(17, 24, 39, 0.95);
+}
+
+.wga-tooltip[data-position='below'] {
+  transform: translate(-50%, 0);
+}
+
+.wga-tooltip[data-position='below']::after {
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-bottom: 8px solid rgba(17, 24, 39, 0.95);
+}
+
+#webguide-ai-overlay {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  padding: 12px 16px;
+  background-color: #111827;
+  color: #f9fafb;
+  border-radius: 8px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.25);
+  font-size: 14px;
+  z-index: 2147483647;
+  max-width: 240px;
+}

@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "WebGuide AI",
+  "description": "Base foundation for the WebGuide AI guidance extension.",
+  "version": "0.1.0",
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "WebGuide AI"
+  },
+  "permissions": ["scripting", "activeTab", "storage"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["styles/overlay.css", "overlay.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

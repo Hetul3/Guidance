@@ -47,8 +47,17 @@ popup.js
 README.md
 agents.md
 
+## Current Implementation Status  
+- Base Chrome extension scaffold in `webguide-ai/` with Manifest V3, background service worker, and popup registration.  
+- Popup UI (`popup/popup.html`, `popup/popup.js`) renders a greeting and injects the active tab content script on demand.  
+- `content-script.js` injects a minimal overlay, exposes messaging hooks, and loads overlay demos on-demand for isolated testing.  
+- `styles/overlay.css` supplies both the legacy banner style and the Shadow DOM visuals for pulses, highlights, and tooltips (sequential triple pulses driven via CSS classes).
+- Popup logic guards against unsupported schemes (e.g., `chrome://`) and surfaces status feedback in the UI.
+- `overlay.js` builds the Shadow DOM overlay system with reusable pulse and highlight utilities and uses staged spawn timing to eliminate animation hitching.
+- Popup UI offers separate controls for feature activation vs. overlay demonstrations to keep modules independently testable.
+
 ## Conventions & Rules  
-- Every directory may include a README or directory-level `agents.md` for module-specific instructions.  
+- Every directory must include a README (or directory-level `agents.md`) that reflects its current responsibilities; update it whenever substantial changes land in that folder.  
 - The LLM output schema from `llm.js` must always be valid JSON (no stray text).  
 - If an element ID is invalid or missing, fallback safely (e.g. “retry”, “no-op”, or re-snapshot).  
 - Use deterministic prompts (temperature = 0) for core logic.  

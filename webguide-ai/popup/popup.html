@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>WebGuide AI</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        margin: 0;
+        padding: 16px;
+        width: 220px;
+        background: #ffffff;
+        color: #1f2933;
+      }
+
+      h1 {
+        font-size: 18px;
+        margin-top: 0;
+        margin-bottom: 12px;
+      }
+
+      .button-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+
+      button {
+        cursor: pointer;
+        border: none;
+        background: #2563eb;
+        color: #ffffff;
+        padding: 10px 14px;
+        border-radius: 6px;
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      button:hover {
+        background: #1d4ed8;
+      }
+
+      button.secondary {
+        background: #f3f4f6;
+        color: #1f2933;
+        border: 1px solid #d1d5db;
+      }
+
+      button.secondary:hover {
+        background: #e5e7eb;
+      }
+
+      #status-message {
+        font-size: 13px;
+        min-height: 18px;
+        margin: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Hello from WebGuide AI!</h1>
+      <div class="button-group">
+        <button id="activate-overlay" type="button">Activate Overlay</button>
+        <button id="run-overlay-demo" type="button" class="secondary">Run Overlay Demo</button>
+      </div>
+      <p id="status-message" role="status" aria-live="polite"></p>
+    </main>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
