@@ -689,6 +689,17 @@ const getActiveTab = async () => {
   }
 };
 
+const sendMessageToTab = (tabId, payload) =>
+  new Promise((resolve, reject) => {
+    chrome.tabs.sendMessage(tabId, payload, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve(response);
+    });
+  });
+
 async function injectOverlay() {
   try {
     const tab = await getActiveTab();
@@ -701,7 +712,12 @@ async function injectOverlay() {
       files: ['content-script.js']
     });
 
-    setStatus('Overlay injected.');
+    try {
+      await sendMessageToTab(tab.id, { type: 'wga-show-overlay', reason: 'manual-activate', skipLogSync: true });
+      setStatus('Overlay activated.');
+    } catch (messageError) {
+      setStatus('Overlay injected.');
+    }
   } catch (error) {
     console.error('WebGuide AI: Failed to inject overlay.', error);
     setStatus('Could not inject overlay. See console for details.', true);
@@ -711,17 +727,6 @@ async function injectOverlay() {
 if (activateButton) {
   activateButton.addEventListener('click', injectOverlay);
 }
-
-const sendMessageToTab = (tabId, payload) =>
-  new Promise((resolve, reject) => {
-    chrome.tabs.sendMessage(tabId, payload, (response) => {
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
-        return;
-      }
-      resolve(response);
-    });
-  });
 
 const runOverlayDemo = async () => {
   const tab = await getActiveTab();

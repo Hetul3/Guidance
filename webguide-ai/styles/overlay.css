@@ -110,12 +110,166 @@
   position: fixed;
   top: 16px;
   right: 16px;
-  padding: 12px 16px;
-  background-color: #111827;
+  padding: 14px 16px 16px;
+  background-color: rgba(17, 24, 39, 0.94);
   color: #f9fafb;
-  border-radius: 8px;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.25);
+  border-radius: 12px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.35);
   font-size: 14px;
   z-index: 2147483647;
-  max-width: 240px;
+  width: 280px;
+  max-width: calc(100vw - 32px);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  backdrop-filter: blur(16px);
+}
+
+#webguide-ai-overlay[hidden] {
+  display: none;
+}
+
+.wga-overlay-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.wga-overlay-title {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.wga-overlay-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wga-overlay-close {
+  appearance: none;
+  border: none;
+  background: rgba(248, 250, 252, 0.12);
+  color: inherit;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.wga-overlay-action {
+  appearance: none;
+  border: none;
+  background: rgba(59, 130, 246, 0.18);
+  color: #bfdbfe;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.wga-overlay-action:hover {
+  background: rgba(59, 130, 246, 0.28);
+  transform: translateY(-1px);
+}
+
+.wga-overlay-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.wga-overlay-close:hover {
+  background: rgba(248, 250, 252, 0.22);
+  transform: scale(1.05);
+}
+
+.wga-overlay-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.wga-overlay-status {
+  font-size: 13px;
+  color: rgba(226, 232, 240, 0.9);
+  margin: 0;
+}
+
+.wga-overlay-status strong {
+  color: #38bdf8;
+  font-weight: 600;
+}
+
+.wga-overlay-log {
+  max-height: 160px;
+  overflow-y: auto;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(71, 85, 105, 0.4);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.wga-overlay-log-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-left: 2px solid transparent;
+  padding-left: 6px;
+}
+
+.wga-overlay-log-entry--error {
+  border-left-color: rgba(248, 113, 113, 0.7);
+}
+
+.wga-overlay-log-entry--warning {
+  border-left-color: rgba(250, 204, 21, 0.7);
+}
+
+.wga-overlay-log-entry time {
+  font-size: 11px;
+  color: rgba(148, 163, 184, 0.85);
+}
+
+.wga-overlay-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.16);
+  color: #93c5fd;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.wga-overlay-pill[data-variant='mutation'] {
+  background: rgba(236, 72, 153, 0.16);
+  color: #f9a8d4;
+}
+
+.wga-overlay-pill[data-variant='navigation'] {
+  background: rgba(16, 185, 129, 0.16);
+  color: #6ee7b7;
+}
+
+.wga-overlay-pill[data-variant='warning'] {
+  background: rgba(250, 204, 21, 0.2);
+  color: #facc15;
 }
