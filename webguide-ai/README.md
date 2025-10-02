@@ -6,6 +6,7 @@ WebGuide AI is a Chrome extension that overlays lightweight automation tooling o
 - **Injectable overlay tools** – Activate an overlay banner, visual highlight/pulse animations, and snapshot the DOM structure of the active tab for downstream automation.
 - **Gemini test chat** – Provide a Gemini API key, send prompts directly from the popup, and receive fully rendered Markdown responses with syntax-highlighted code blocks. Missing/invalid keys surface graceful UI prompts instead of console errors.
 - **DOM snapshot inventory** – Collect a rich, structured map of clickable elements (raw + LLM-friendly views) with contextual labels, visibility flags, MutationObserver versioning, and a global registry for ID lookups.
+- **Tavily search** – Store a Tavily API key once and run curated searches that return one authoritative source, up to three plain-text snippets, and a concise answer tuned for LLM hand-offs.
 
 Everything runs locally inside Chrome—no server required. Keys and results are stored in `chrome.storage.local` only.
 
@@ -44,10 +45,15 @@ Everything runs locally inside Chrome—no server required. Keys and results are
 5. Test Gemini chat:
    - Type any prompt in the chat textarea, press **Send** (or Ctrl/⌘+Enter).
    - Responses render as sanitised Markdown with syntax-highlighted code blocks. Errors are surfaced inline with actionable messaging.
+6. Configure Tavily search:
+   - Enter your Tavily API key in the **Tavily Search** card and click **Save Key**. Keys stay local in `chrome.storage.local`.
+   - Submit a query; advanced options let you bias recency (`timeRange`), supply explicit `startDate` / `endDate` bounds, request additional sources (`maxResults`), control snippet count (`chunksPerSource`), choose snippet format (plain text, Markdown, or HTML), and optionally enable Tavily auto-parameter tuning.
+   - Responses include a synthesised answer followed by linked sources rendered according to the selected format. Invalid keys prompt for re-entry and auto-retry the last query once saved.
 
 ### Development Notes
 - `popup.js` handles UI orchestration (DOM snapshot messaging, overlay injection, API key management, Gemini chat).
 - `llm.js` wraps Gemini 2.0 Flash with deterministic settings (temperature 0) and typed errors for missing/invalid API keys.
+- `tavily.js` wraps Tavily's search endpoint with explicit parameters (`searchDepth: "advanced"`, controllable `maxResults`/`chunksPerSource`, selectable `includeRawContent` format, `autoParameters` toggle) and normalises snippet output while surfacing typed errors for missing/invalid keys.
 - `dom-snapshot.js` builds a rich element inventory (raw + filtered LLM view) and stores a live registry map for subsequent automation.
 - `styles/chat.css` / `styles/highlight.css` define the Markdown and code presentation; `vendor/marked-lite.js` and `vendor/dompurify-lite.js` keep parsing/sanitisation self-contained.
 
@@ -56,6 +62,10 @@ Everything runs locally inside Chrome—no server required. Keys and results are
 - DOM snapshot logs raw+LLM arrays and allows ID lookup via `window.WebGuideAI.elementRegistry`.
 - Gemini chat handles bold/italic/strikethrough, lists, tables, task lists, blockquotes, code blocks, links, and images without leaking raw Markdown.
 - Invalid/missing keys trigger the inline prompt and do not crash the popup.
+- Tavily search:
+  - Missing keys prompt for entry and focus the key input.
+  - Invalid keys surface the guidance to replace the key and retry automatically.
+  - Queries display a synthesised answer plus linked sources rendered in the chosen snippet format, respecting time-range/date overrides and custom max-results/chunk counts.
 
 ## License
 MIT © 2024 WebGuide AI contributors

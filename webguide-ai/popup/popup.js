@@ -1,3 +1,5 @@
+import { getTavilyKey, setTavilyKey } from '../storage.js';
+
 const activateButton = document.getElementById('activate-overlay');
 const overlayDemoButton = document.getElementById('run-overlay-demo');
 const domSnapshotButton = document.getElementById('run-dom-snapshot');
@@ -9,6 +11,27 @@ const userMessageInput = document.getElementById('gemini-user-message');
 const sendGeminiButton = document.getElementById('send-gemini-message');
 const geminiResponseBlock = document.getElementById('gemini-response');
 const geminiChatStatus = document.getElementById('gemini-chat-status');
+const tavilyKeyInputWrapper = document.getElementById('tavily-key-input-wrapper');
+const tavilyKeyPreviewRow = document.getElementById('tavily-key-preview');
+const tavilyKeyInput = document.getElementById('tavily-api-key');
+const saveTavilyKeyButton = document.getElementById('save-tavily-key');
+const updateTavilyKeyButton = document.getElementById('update-tavily-key');
+const tavilyKeyMask = document.getElementById('tavily-key-mask');
+const tavilyKeyStatus = document.getElementById('tavily-key-status');
+const tavilyQueryInput = document.getElementById('tavily-query');
+const tavilySearchButton = document.getElementById('run-tavily-search');
+const tavilyResultBlock = document.getElementById('tavily-result');
+const tavilySearchStatus = document.getElementById('tavily-search-status');
+const tavilyTimeRangeSelect = document.getElementById('tavily-time-range');
+const tavilyStartDateInput = document.getElementById('tavily-start-date');
+const tavilyEndDateInput = document.getElementById('tavily-end-date');
+const tavilyMaxResultsInput = document.getElementById('tavily-max-results');
+const tavilyChunksInput = document.getElementById('tavily-chunks-per-source');
+const tavilyRawContentSelect = document.getElementById('tavily-raw-content');
+const tavilyAutoParametersCheckbox = document.getElementById('tavily-auto-parameters');
+
+let tavilyRetryAfterSave = false;
+let lastTavilyRequest = null;
 
 const loadLlmModule = (() => {
   let modulePromise;
@@ -17,6 +40,23 @@ const loadLlmModule = (() => {
       const moduleUrl = chrome.runtime && chrome.runtime.getURL ? chrome.runtime.getURL('llm.js') : null;
       if (!moduleUrl) {
         return Promise.reject(new Error('Unable to resolve LLM module URL'));
+      }
+      modulePromise = import(moduleUrl).catch((error) => {
+        modulePromise = null;
+        throw error;
+      });
+    }
+    return modulePromise;
+  };
+})();
+
+const loadTavilyModule = (() => {
+  let modulePromise;
+  return () => {
+    if (!modulePromise) {
+      const moduleUrl = chrome.runtime && chrome.runtime.getURL ? chrome.runtime.getURL('tavily.js') : null;
+      if (!moduleUrl) {
+        return Promise.reject(new Error('Unable to resolve Tavily module URL'));
       }
       modulePromise = import(moduleUrl).catch((error) => {
         modulePromise = null;
@@ -110,6 +150,119 @@ if (apiKeyInput) {
   });
 }
 
+const setTavilyKeyStatus = (message, isError = false) => {
+  if (!tavilyKeyStatus) {
+    return;
+  }
+
+  if (!message) {
+    tavilyKeyStatus.hidden = true;
+    tavilyKeyStatus.textContent = '';
+    return;
+  }
+
+  tavilyKeyStatus.hidden = false;
+  tavilyKeyStatus.textContent = message;
+  tavilyKeyStatus.style.color = isError ? '#b91c1c' : '#047857';
+};
+
+const showTavilyKeyInput = () => {
+  if (tavilyKeyInputWrapper) {
+    tavilyKeyInputWrapper.hidden = false;
+  }
+  if (tavilyKeyPreviewRow) {
+    tavilyKeyPreviewRow.hidden = true;
+  }
+  if (tavilyKeyInput) {
+    tavilyKeyInput.dataset.hasValue = 'false';
+    tavilyKeyInput.value = '';
+    tavilyKeyInput.type = 'password';
+    tavilyKeyInput.focus();
+  }
+  setTavilyKeyStatus('');
+};
+
+const showTavilyKeyPreview = (key) => {
+  if (tavilyKeyPreviewRow) {
+    tavilyKeyPreviewRow.hidden = false;
+  }
+  if (tavilyKeyInputWrapper) {
+    tavilyKeyInputWrapper.hidden = true;
+  }
+  if (tavilyKeyMask) {
+    tavilyKeyMask.textContent = maskKey(key);
+  }
+  if (tavilyKeyInput) {
+    tavilyKeyInput.dataset.hasValue = 'true';
+    tavilyKeyInput.value = maskKey(key);
+  }
+  setTavilyKeyStatus('');
+};
+
+const loadStoredTavilyKey = async () => {
+  try {
+    const storedKey = await getTavilyKey();
+    if (storedKey) {
+      showTavilyKeyPreview(storedKey);
+      return;
+    }
+  } catch (error) {
+    console.error('WebGuide AI: Failed to load Tavily key from storage.', error);
+  }
+
+  showTavilyKeyInput();
+};
+
+const handleSaveTavilyKey = async () => {
+  if (!tavilyKeyInput) {
+    return;
+  }
+
+  const rawValue = tavilyKeyInput.value || '';
+  const trimmed = rawValue.trim();
+
+  if (!trimmed || /^\*+$/.test(trimmed)) {
+    setTavilyKeyStatus('Enter a valid key to save.', true);
+    return;
+  }
+
+  try {
+    setTavilyKeyStatus('Saving key...');
+    await setTavilyKey(trimmed);
+    showTavilyKeyPreview(trimmed);
+    setTavilyKeyStatus('Tavily API key saved.');
+
+    if (tavilyRetryAfterSave && lastTavilyRequest) {
+      tavilyRetryAfterSave = false;
+      await runTavilySearch(true);
+    }
+  } catch (error) {
+    console.error('WebGuide AI: Failed to save Tavily key.', error);
+    setTavilyKeyStatus('Failed to save key. See console.', true);
+  }
+};
+
+if (saveTavilyKeyButton) {
+  saveTavilyKeyButton.addEventListener('click', handleSaveTavilyKey);
+}
+
+if (updateTavilyKeyButton) {
+  updateTavilyKeyButton.addEventListener('click', () => {
+    tavilyRetryAfterSave = false;
+    showTavilyKeyInput();
+  });
+}
+
+if (tavilyKeyInput) {
+  tavilyKeyInput.addEventListener('focus', () => {
+    if (tavilyKeyInput.dataset.hasValue === 'true') {
+      tavilyKeyInput.dataset.hasValue = 'false';
+      tavilyKeyInput.value = '';
+    }
+    setTavilyKeyStatus('');
+  });
+}
+
 const setChatStatus = (message, isError = false) => {
   if (!geminiChatStatus) {
     return;
@@ -141,6 +294,141 @@ const setGeminiResponse = (message, isError = false) => {
   if (window.hljs && typeof window.hljs.highlightAll === 'function') {
     window.hljs.highlightAll();
   }
+};
+
+const setTavilySearchStatus = (message, isError = false) => {
+  if (!tavilySearchStatus) {
+    return;
+  }
+
+  tavilySearchStatus.textContent = message || '';
+  tavilySearchStatus.style.color = isError ? '#b91c1c' : '#6b7280';
+};
+
+const resetTavilyResult = () => {
+  if (!tavilyResultBlock) {
+    return;
+  }
+
+  tavilyResultBlock.classList.add('empty');
+  tavilyResultBlock.classList.remove('error');
+  tavilyResultBlock.textContent = 'Tavily answers appear here.';
+};
+
+const renderTavilyMessage = (message, isError = false) => {
+  if (!tavilyResultBlock) {
+    return;
+  }
+
+  tavilyResultBlock.classList.remove('empty');
+  tavilyResultBlock.classList.toggle('error', isError);
+  tavilyResultBlock.textContent = message;
+};
+
+const renderTavilyResult = (payload, rawContentFormat = 'text') => {
+  if (!tavilyResultBlock) {
+    return;
+  }
+
+  tavilyResultBlock.classList.remove('empty');
+  tavilyResultBlock.classList.remove('error');
+  tavilyResultBlock.textContent = '';
+
+  const fragment = document.createDocumentFragment();
+
+  if (payload?.answer) {
+    const answerHeading = document.createElement('h3');
+    answerHeading.textContent = 'Synthesised Answer';
+    const answerBody = document.createElement('p');
+    answerBody.textContent = payload.answer;
+    fragment.appendChild(answerHeading);
+    fragment.appendChild(answerBody);
+  }
+
+  if (Array.isArray(payload?.results) && payload.results.length > 0) {
+    payload.results.forEach((result, index) => {
+      const sourceHeading = document.createElement('h4');
+      sourceHeading.textContent = payload.results.length === 1 ? 'Top Source' : `Source ${index + 1}`;
+
+      const link = document.createElement('a');
+      const linkLabel = result.title || result.url || 'View source';
+      link.textContent = linkLabel;
+      if (result.url) {
+        link.href = result.url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+      }
+
+      const linkWrapper = document.createElement('p');
+      linkWrapper.appendChild(link);
+
+      fragment.appendChild(sourceHeading);
+      fragment.appendChild(linkWrapper);
+
+      if (typeof result.score === 'number') {
+        const score = document.createElement('p');
+        score.classList.add('help-text');
+        score.textContent = `Relevance score: ${result.score.toFixed(3)}`;
+        fragment.appendChild(score);
+      }
+
+      if (result.content) {
+        const snippetsHeading = document.createElement('h5');
+        snippetsHeading.textContent = 'Content';
+        fragment.appendChild(snippetsHeading);
+
+        if (rawContentFormat === 'markdown' && window.marked) {
+          const html = window.marked.parse(result.content);
+          const sanitized = window.DOMPurify ? window.DOMPurify.sanitize(html) : html;
+          const markdownWrapper = document.createElement('div');
+          markdownWrapper.innerHTML = sanitized;
+          markdownWrapper.style.marginTop = '6px';
+          fragment.appendChild(markdownWrapper);
+        } else if (rawContentFormat === 'html') {
+          const sanitizedHtml = window.DOMPurify ? window.DOMPurify.sanitize(result.content) : result.content;
+          const htmlWrapper = document.createElement('div');
+          htmlWrapper.innerHTML = sanitizedHtml;
+          htmlWrapper.style.marginTop = '6px';
+          fragment.appendChild(htmlWrapper);
+        } else {
+          const contentBlock = document.createElement('pre');
+          contentBlock.textContent = result.content;
+          contentBlock.style.whiteSpace = 'pre-wrap';
+          contentBlock.style.margin = '6px 0 0';
+          contentBlock.style.fontFamily = 'inherit';
+          contentBlock.style.fontSize = '13px';
+          contentBlock.style.lineHeight = '1.55';
+          contentBlock.style.background = 'rgba(15, 23, 42, 0.04)';
+          contentBlock.style.border = '1px solid rgba(148, 163, 184, 0.35)';
+          contentBlock.style.borderRadius = '10px';
+          contentBlock.style.padding = '10px 12px';
+
+          fragment.appendChild(contentBlock);
+        }
+      }
+    });
+  }
+
+  if (!fragment.childNodes.length) {
+    const emptyMessage = document.createElement('p');
+    emptyMessage.textContent = '(Tavily returned no content.)';
+    fragment.appendChild(emptyMessage);
+  }
+
+  tavilyResultBlock.replaceChildren(fragment);
+
+  if (rawContentFormat !== 'text' && window.hljs && typeof window.hljs.highlightAll === 'function') {
+    window.hljs.highlightAll();
+  }
+};
+
+const setTavilySearchButtonLoading = (isLoading) => {
+  if (!tavilySearchButton) {
+    return;
+  }
+
+  tavilySearchButton.disabled = isLoading;
+  tavilySearchButton.textContent = isLoading ? 'Searching…' : 'Search';
 };
 
 const promptForKeyAndRetry = async (retryCallback) => {
@@ -229,6 +517,141 @@ if (userMessageInput) {
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
       sendGeminiMessage();
+    }
+  });
+}
+
+const getDateInputValue = (input) => {
+  if (!input) {
+    return undefined;
+  }
+  const value = (input.value || '').trim();
+  return value || undefined;
+};
+
+const parseBoundedInteger = (value, min, max, fallback = null) => {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  let clamped = parsed;
+  if (typeof min === 'number' && clamped < min) {
+    clamped = min;
+  }
+  if (typeof max === 'number' && clamped > max) {
+    clamped = max;
+  }
+  return clamped;
+};
+
+const runTavilySearch = async (isRetry = false) => {
+  if (!tavilyQueryInput) {
+    return;
+  }
+
+  let query;
+  let options;
+
+  if (isRetry && lastTavilyRequest) {
+    ({ query, options } = lastTavilyRequest);
+  } else {
+    query = (tavilyQueryInput.value || '').trim();
+
+    if (!query) {
+      setTavilySearchStatus('Enter a query to search.', true);
+      renderTavilyMessage('Enter a query to search.', true);
+      return;
+    }
+
+    const timeRange = tavilyTimeRangeSelect ? tavilyTimeRangeSelect.value : undefined;
+    const startDate = getDateInputValue(tavilyStartDateInput);
+    const endDate = getDateInputValue(tavilyEndDateInput);
+    const maxResults = tavilyMaxResultsInput ? parseBoundedInteger(tavilyMaxResultsInput.value, 1, 5, 1) : 1;
+    const chunksPerSource = tavilyChunksInput ? parseBoundedInteger(tavilyChunksInput.value, 1, 10, 3) : 3;
+    const requestedRawFormat = tavilyRawContentSelect ? tavilyRawContentSelect.value : 'text';
+    const allowedFormats = new Set(['text', 'markdown', 'html']);
+    const includeRawContent = allowedFormats.has(requestedRawFormat) ? requestedRawFormat : 'text';
+    const autoParameters = Boolean(tavilyAutoParametersCheckbox?.checked);
+
+    if (startDate && endDate && startDate > endDate) {
+      setTavilySearchStatus('Start date must be before end date.', true);
+      renderTavilyMessage('Start date must be before end date.', true);
+      return;
+    }
+
+    options = {
+      timeRange,
+      startDate,
+      endDate,
+      maxResults,
+      chunksPerSource,
+      includeRawContent,
+      autoParameters
+    };
+
+    lastTavilyRequest = { query, options: { ...options } };
+  }
+
+  options = options || {};
+
+  if (!isRetry) {
+    tavilyRetryAfterSave = false;
+  }
+
+  setTavilySearchStatus('Searching…');
+  resetTavilyResult();
+  setTavilySearchButtonLoading(true);
+
+  try {
+    const { tavilySearch, MissingTavilyKeyError, InvalidTavilyKeyError } = await loadTavilyModule();
+
+    try {
+      const result = await tavilySearch(query, options);
+      renderTavilyResult(result, options?.includeRawContent || 'text');
+      tavilyRetryAfterSave = false;
+      setTavilySearchStatus('Results ready.');
+    } catch (error) {
+      if (error instanceof MissingTavilyKeyError || error?.code === 'MissingTavilyKeyError') {
+        tavilyRetryAfterSave = true;
+        showTavilyKeyInput();
+        setTavilyKeyStatus('Enter your Tavily API key to continue.', true);
+        setTavilySearchStatus('');
+        renderTavilyMessage('Enter your Tavily API key to continue.', true);
+        return;
+      }
+
+      if (error instanceof InvalidTavilyKeyError || error?.code === 'InvalidTavilyKeyError') {
+        tavilyRetryAfterSave = true;
+        showTavilyKeyInput();
+        setTavilyKeyStatus('Your Tavily API key appears invalid. Please enter a new key.', true);
+        setTavilySearchStatus('');
+        renderTavilyMessage('Your Tavily API key appears invalid. Please enter a new key.', true);
+        return;
+      }
+
+      console.error('WebGuide AI: Tavily search failed.', error);
+      const message = typeof error?.message === 'string' ? error.message : 'Tavily request failed.';
+      setTavilySearchStatus('Tavily error.', true);
+      renderTavilyMessage(`Error: ${message}`, true);
+    }
+  } catch (error) {
+    console.error('WebGuide AI: Unable to load Tavily module.', error);
+    setTavilySearchStatus('Unable to load Tavily module.', true);
+    renderTavilyMessage(`Error: ${error.message || error}`, true);
+  } finally {
+    setTavilySearchButtonLoading(false);
+  }
+};
+
+if (tavilySearchButton) {
+  tavilySearchButton.addEventListener('click', () => runTavilySearch(false));
+}
+
+if (tavilyQueryInput) {
+  tavilyQueryInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      runTavilySearch(false);
     }
   });
 }
@@ -365,3 +788,4 @@ if (domSnapshotButton) {
 }
 
 loadStoredApiKey();
+loadStoredTavilyKey();
