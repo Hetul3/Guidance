@@ -1,4 +1,4 @@
-import { startAgent, stopAgent, resetAgent, getAgentStatus, handleScanEvent, handlePageChange } from './agent/orchestrator.js';
+import { startAgent, stopAgent, resetAgent, getAgentStatus, handleScanEvent, handlePageChange, getAgentLogs, clearAgentLogs } from './agent/orchestrator.js';
 import { clearRateLimiter } from './agent/rateLimiter.js';
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -48,16 +48,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === 'wga-agent-reset') {
     console.debug('[WebGuideAI][background] Agent reset requested');
-    clearRateLimiter();
-    resetAgent()
-      .then(() => sendResponse?.({ ok: true }))
-      .catch((error) => sendResponse?.({ ok: false, error: error.message }));
+    (async () => {
+      try {
+        await stopAgent({ manual: true });
+      } catch (_error) {
+        // ignore
+      }
+      clearRateLimiter();
+      clearAgentLogs();
+      await resetAgent();
+      sendResponse?.({ ok: true });
+    })().catch((error) => sendResponse?.({ ok: false, error: error.message }));
     return true;
   }
 
   if (message.type === 'wga-agent-status') {
     console.debug('[WebGuideAI][background] Agent status requested');
     sendResponse?.({ ok: true, status: getAgentStatus() });
+    return true;
+  }
+
+  if (message.type === 'wga-agent-get-logs') {
+    sendResponse?.({ ok: true, logs: getAgentLogs() });
+    return true;
+  }
+
+  if (message.type === 'wga-agent-clear-log') {
+    clearAgentLogs();
+    sendResponse?.({ ok: true });
     return true;
   }
 

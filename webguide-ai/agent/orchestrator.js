@@ -66,6 +66,49 @@ const log = {
   }
 };
 
+const agentLogs = [];
+const MAX_AGENT_LOGS = 200;
+
+function generateLogId() {
+  try {
+    if (globalThis.crypto?.randomUUID) {
+      return globalThis.crypto.randomUUID();
+    }
+  } catch (_error) {
+    // ignore
+  }
+  return `log-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function recordLog(entry = {}) {
+  const timestamp = Date.now();
+  const logEntry = {
+    id: generateLogId(),
+    timestamp,
+    ...entry
+  };
+
+  agentLogs.push(logEntry);
+  if (agentLogs.length > MAX_AGENT_LOGS) {
+    agentLogs.shift();
+  }
+
+  chrome.runtime
+    .sendMessage({ type: 'wga-agent-log', log: logEntry })
+    .catch(() => {});
+
+  return logEntry;
+}
+
+export function getAgentLogs() {
+  return [...agentLogs];
+}
+
+export function clearAgentLogs() {
+  agentLogs.length = 0;
+  chrome.runtime.sendMessage({ type: 'wga-agent-log-cleared' }).catch(() => {});
+}
+
 function normalizeJsonPayload(text) {
   if (typeof text !== 'string') {
     return '';
@@ -227,6 +270,7 @@ async function sendMessageToTab(message, { retry = true } = {}) {
         tabId: agentRuntime.tabId,
         messageType: message?.type
       });
+      recordLog({ stage: 'message.retry', messageType: message?.type });
       await ensureContentScript(agentRuntime.tabId);
       // small delay to allow script to initialize
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -239,6 +283,7 @@ async function sendMessageToTab(message, { retry = true } = {}) {
       error: messageText,
       stack: error?.stack
     });
+    recordLog({ stage: 'message.error', messageType: message?.type, error: messageText });
     throw error;
   }
 }
@@ -252,6 +297,7 @@ async function requestDomSnapshot() {
       error: errorMessage,
       details: snapshot
     });
+    recordLog({ stage: 'dom.snapshot.error', error: errorMessage });
     throw new Error(errorMessage);
   }
 
@@ -269,6 +315,13 @@ async function requestDomSnapshot() {
     llmCount: snapshot.llmCount,
     mutationVersion: snapshot.mutationVersion
   });
+  recordLog({
+    stage: 'dom.snapshot',
+    rawCount: snapshot.rawCount,
+    llmCount: snapshot.llmCount,
+    mutationVersion: snapshot.mutationVersion,
+    url: snapshot.url || agentRuntime.currentUrl
+  });
 
   return snapshot.snapshot || [];
 }
@@ -276,11 +329,13 @@ async function requestDomSnapshot() {
 async function executeVisualAction(action, targetId, message) {
   const payload = { type: 'wga-run-overlay', action, targetId, message };
   agentRuntime.lastTool = action;
+  recordLog({ stage: 'tool.visual.dispatch', action, targetId: targetId || null, message: message || null });
   return sendMessageToTab(payload);
 }
 
 async function executeScroll(direction, targetId) {
   agentRuntime.lastTool = 'scroll';
+  recordLog({ stage: 'tool.scroll', direction, targetId: targetId || null });
   return sendMessageToTab({ type: 'wga-scroll', direction, targetId });
 }
 
@@ -300,6 +355,7 @@ async function executeToolCall(call) {
   } else if (args && typeof args === 'object') {
     parsedArgs = args;
   }
+  recordLog({ stage: 'tool.execute', name, args: parsedArgs });
   if (name === 'search') {
     const result = await tavilySearch(parsedArgs.query, {
       timeRange: parsedArgs.time_range,
@@ -308,14 +364,22 @@ async function executeToolCall(call) {
     });
     await saveState({ lastSearch: result });
     agentRuntime.lastTool = 'search';
+    recordLog({
+      stage: 'tool.search.result',
+      query: parsedArgs.query,
+      answerPreview: typeof result?.answer === 'string' ? result.answer.slice(0, 160) : null,
+      resultCount: Array.isArray(result?.results) ? result.results.length : 0
+    });
     return result;
   }
   if (name === 'get_dom_snapshot') {
     agentRuntime.lastTool = 'get_dom_snapshot';
+    recordLog({ stage: 'tool.domSnapshot' });
     return requestDomSnapshot();
   }
   if (isVisualTool(name)) {
     await executeVisualAction(name, parsedArgs.targetId, parsedArgs.message);
+    recordLog({ stage: 'tool.visual', name, targetId: parsedArgs.targetId || null, message: parsedArgs.message || null });
     return { ok: true };
   }
   throw new Error(`Unsupported tool call: ${name}`);
@@ -340,9 +404,16 @@ async function runPlanner(state, snapshot) {
       planSize: Array.isArray(state.stepPlan) ? state.stepPlan.length : 0,
       toolLoopCount
     });
+    recordLog({
+      stage: 'planner.prepare',
+      snapshotElements: snapshot.length,
+      planSize: Array.isArray(state.stepPlan) ? state.stepPlan.length : 0,
+      loop: toolLoopCount
+    });
 
     const { model, data } = await withRateLimit('planner', async (modelName) => {
       try {
+        recordLog({ stage: 'planner.request', model: modelName });
         const response = await plannerGenerate({
           model: modelName,
           systemPrompt: plannerPrompt,
@@ -351,6 +422,7 @@ async function runPlanner(state, snapshot) {
           tools: getFunctionDeclarations()
         });
         log.debug('Planner response received', { model: modelName });
+        recordLog({ stage: 'planner.response.raw', model: modelName });
         return response;
       } catch (plannerError) {
         log.error('Planner request failed', {
@@ -358,6 +430,7 @@ async function runPlanner(state, snapshot) {
           error: plannerError?.message,
           stack: plannerError?.stack
         });
+        recordLog({ stage: 'planner.error', model: modelName, error: plannerError?.message });
         throw plannerError;
       }
     });
@@ -374,12 +447,16 @@ async function runPlanner(state, snapshot) {
         count: functionCalls.length,
         toolLoopCount
       });
+      recordLog({ stage: 'planner.toolCalls', count: functionCalls.length });
 
       for (const call of functionCalls) {
         try {
+          recordLog({ stage: 'planner.toolCall.execute', name: call?.name });
           await executeToolCall(call);
+          recordLog({ stage: 'planner.toolCall.complete', name: call?.name });
         } catch (error) {
           await pushDiagnostic({ tool: call?.name, error: error.message });
+          recordLog({ stage: 'planner.toolCall.error', name: call?.name, error: error.message });
           throw error;
         }
       }
@@ -400,16 +477,19 @@ async function runPlanner(state, snapshot) {
       log.debug('Planner text payload preview', text.slice(0, 240));
       const cleaned = normalizeJsonPayload(text);
       parsed = JSON.parse(cleaned);
+      recordLog({ stage: 'planner.response.parsed', model, preview: cleaned.slice(0, 240) });
     } catch (error) {
       log.error('Planner JSON parse failed', {
         error: error.message,
         preview: text.slice(0, 240)
       });
+      recordLog({ stage: 'planner.parse.error', error: error.message, preview: text.slice(0, 240) });
       throw new Error('Planner JSON parse failed.');
     }
 
     const validation = validateActionPlan(parsed);
     if (!validation.valid) {
+      recordLog({ stage: 'planner.validation.error', errors: validation.errors });
       throw new Error(`Planner output invalid: ${validation.errors.join('; ')}`);
     }
 
@@ -428,9 +508,11 @@ async function callExecutor(instruction, snapshot) {
     instruction,
     snapshotElements: snapshot.length
   });
+  recordLog({ stage: 'executor.prepare', instruction, snapshotElements: snapshot.length });
 
   const { model, data } = await withRateLimit('executor', async (modelName) => {
     try {
+      recordLog({ stage: 'executor.request', model: modelName, instruction });
       const response = await executorGenerate({
         model: modelName,
         systemPrompt: executorPrompt,
@@ -439,6 +521,7 @@ async function callExecutor(instruction, snapshot) {
         tools: getFunctionDeclarations()
       });
       log.debug('Executor response received', { model: modelName });
+      recordLog({ stage: 'executor.response.raw', model: modelName });
       return response;
     } catch (executorError) {
       log.error('Executor request failed', {
@@ -446,6 +529,7 @@ async function callExecutor(instruction, snapshot) {
         error: executorError?.message,
         stack: executorError?.stack
       });
+      recordLog({ stage: 'executor.error', model: modelName, error: executorError?.message });
       throw executorError;
     }
   });
@@ -467,9 +551,11 @@ async function callExecutor(instruction, snapshot) {
       const parsed = JSON.parse(cleaned);
       const validation = validateActionPlan(parsed);
       if (validation.valid) {
+        recordLog({ stage: 'executor.response.parsed', model, preview: cleaned.slice(0, 240) });
         return validation.value.steps;
       }
     } catch (_error) {
+      recordLog({ stage: 'executor.parse.error', preview: text.slice(0, 240) });
       // fall-through to heuristic
     }
   }
@@ -522,6 +608,14 @@ async function executeStep(step, snapshot) {
       await executeVisualAction('pulse', step.targetId, step.message);
       return true;
     }
+    case 'type': {
+      const message = step.message || (step.text ? `Type: "${step.text}"` : 'Enter the required text.');
+      if (step.targetId) {
+        await executeVisualAction('highlight', step.targetId, message);
+      }
+      recordLog({ stage: 'plan.step.type', targetId: step.targetId || null, text: step.text || null, message });
+      return true;
+    }
     case 'scroll': {
       await executeScroll(step.direction || 'down', step.targetId);
       return true;
@@ -550,16 +644,19 @@ async function executePlanSteps(steps, snapshot) {
 
   for (const step of steps) {
     log.debug('Executing plan step', step);
+    recordLog({ stage: 'plan.step', action: step.action, targetId: step.targetId || null, message: step.message || null });
 
     if (step.action === 'get_dom_snapshot') {
       log.debug('Plan requested fresh DOM snapshot');
       currentSnapshot = await requestDomSnapshot();
+      recordLog({ stage: 'plan.step.domSnapshot' });
       continue;
     }
 
     const continueLoop = await executeStep(step, currentSnapshot);
     if (!continueLoop) {
       log.debug('Execution halted waiting for external event', step);
+      recordLog({ stage: 'plan.step.halt', action: step.action });
       halted = true;
       break;
     }
@@ -583,6 +680,7 @@ async function runPlannerCycle(reason = 'manual') {
   agentRuntime.status = STEP_STATUS.RUNNING;
   broadcast({ reason });
   log.debug('Planner cycle started', { reason, currentUrl: agentRuntime.currentUrl });
+  recordLog({ stage: 'cycle.start', reason, url: agentRuntime.currentUrl });
 
   try {
     const tab = await resolveActiveTab(agentRuntime.tabId);
@@ -614,6 +712,7 @@ async function runPlannerCycle(reason = 'manual') {
     await pushDiagnostic({ error: error.message });
     broadcast({ error: error.message });
     log.error('Planner cycle failed', { reason, error: error.message, stack: error.stack });
+    recordLog({ stage: 'cycle.error', reason, error: error.message });
   } finally {
     agentRuntime.processing = false;
     broadcast();
@@ -621,6 +720,7 @@ async function runPlannerCycle(reason = 'manual') {
       status: agentRuntime.status,
       awaitingInterrupt: agentRuntime.awaitingInterrupt
     });
+    recordLog({ stage: 'cycle.finish', status: agentRuntime.status, awaitingInterrupt: agentRuntime.awaitingInterrupt });
   }
 }
 
@@ -667,6 +767,7 @@ export async function startAgent({ goal, tabId, options } = {}) {
 
   broadcast({ sessionId: agentRuntime.sessionId, goal });
   log.info('Session started', { goal, sessionId: agentRuntime.sessionId, tabId: agentRuntime.tabId });
+  recordLog({ stage: 'session.start', goal, tabId: agentRuntime.tabId, url: agentRuntime.currentUrl });
   await runPlannerCycle('agent-start');
 }
 
@@ -680,6 +781,7 @@ export async function stopAgent({ manual = false } = {}) {
   } catch (_error) {
     // ignore
   }
+  recordLog({ stage: 'session.stop', reason: manual ? 'manual' : 'auto' });
 }
 
 export async function resetAgent() {
@@ -691,6 +793,7 @@ export async function resetAgent() {
   agentRuntime.lastError = null;
   agentRuntime.awaitingInterrupt = false;
   broadcast();
+  recordLog({ stage: 'session.reset' });
 }
 
 export function getAgentStatus() {
@@ -713,6 +816,7 @@ export async function handleScanEvent(detail) {
   }
   if (agentRuntime.awaitingInterrupt || agentRuntime.status === STEP_STATUS.WAITING) {
     log.debug('Scan event received, resuming planner', detail);
+    recordLog({ stage: 'scan.event', detail });
     agentRuntime.awaitingInterrupt = false;
     await runPlannerCycle(detail?.reason || 'scan-event');
   } else {
@@ -726,6 +830,7 @@ export async function handlePageChange({ tabId, url, reason }) {
     return;
   }
   log.debug('Page change detected', { url, reason });
+  recordLog({ stage: 'page.change', url, reason });
   agentRuntime.currentUrl = url;
   agentRuntime.awaitingInterrupt = false;
   await runPlannerCycle(reason || 'page-change');

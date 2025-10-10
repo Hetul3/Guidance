@@ -7,7 +7,8 @@ const ALLOWED_ACTIONS = new Set([
   'wait',
   'ask_user',
   'noop',
-  'get_dom_snapshot'
+  'get_dom_snapshot',
+  'type'
 ]);
 
 const SCROLL_DIRECTIONS = new Set(['up', 'down', 'toElement']);
@@ -57,6 +58,10 @@ export function validateActionPlan(payload) {
 
     if (typeof step.direction === 'string' && SCROLL_DIRECTIONS.has(step.direction)) {
       safeStep.direction = step.direction;
+    }
+
+    if (typeof step.text === 'string') {
+      safeStep.text = step.text.trim().slice(0, 200);
     }
 
     if (typeof step.reason === 'string') {

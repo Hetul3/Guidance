@@ -1,6 +1,14 @@
 const WINDOW_MS = 60_000;
-const MAX_WAIT_MS = 2_000;
-const RETRY_DELAY_MS = 400;
+const MAX_WAIT_MS = 6_000;
+const RETRY_DELAY_MS = 300;
+const RATE_LIMIT_ERROR_CODES = new Set([429]);
+const RATE_LIMIT_ERROR_PHRASES = [
+  'resource has been exhausted',
+  'rate limit',
+  'too many requests',
+  'quota',
+  'please wait'
+];
 
 const MODEL_BUCKETS = {
   planner: [
@@ -37,6 +45,18 @@ function recordUsage(bucket, now) {
   bucketUsage.set(bucket.key, usage);
 }
 
+function isRateLimitError(error) {
+  if (!error) {
+    return false;
+  }
+  const message = typeof error?.message === 'string' ? error.message.toLowerCase() : '';
+  const status = typeof error?.status === 'number' ? error.status : undefined;
+  if (status && RATE_LIMIT_ERROR_CODES.has(status)) {
+    return true;
+  }
+  return RATE_LIMIT_ERROR_PHRASES.some((phrase) => message.includes(phrase));
+}
+
 export async function withRateLimit(role, task) {
   const buckets = MODEL_BUCKETS[role];
   if (!buckets) {
@@ -45,22 +65,38 @@ export async function withRateLimit(role, task) {
 
   const start = Date.now();
   let attempt = 0;
+  let lastError;
 
   while (Date.now() - start < MAX_WAIT_MS) {
     attempt += 1;
     const now = Date.now();
 
     for (const bucket of buckets) {
-      if (canUseBucket(bucket, now)) {
-        recordUsage(bucket, now);
+      if (!canUseBucket(bucket, now)) {
+        continue;
+      }
+
+      recordUsage(bucket, now);
+      try {
+        const data = await task(bucket.model);
         return {
           model: bucket.model,
-          data: await task(bucket.model)
+          data
         };
+      } catch (error) {
+        lastError = error;
+        if (!isRateLimitError(error)) {
+          throw error;
+        }
+        // rate limit hit; continue to next bucket
       }
     }
 
     await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+  }
+
+  if (lastError) {
+    throw lastError;
   }
 
   throw new Error('Agent rate limiter is cooling down; please retry shortly.');

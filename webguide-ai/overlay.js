@@ -91,6 +91,8 @@ const createPulse = (rect, container) => {
 };
 
 const createHighlight = (rect, message, container) => {
+  container.querySelectorAll('.wga-highlight').forEach((node) => node.remove());
+
   const highlight = document.createElement('div');
   highlight.className = 'wga-highlight';
   highlight.style.top = `${rect.top - 4}px`;
@@ -121,7 +123,7 @@ const createHighlight = (rect, message, container) => {
     if (tooltip) {
       tooltip.remove();
     }
-  }, 3000);
+  }, 10000);
 
   return { highlight, tooltip };
 };

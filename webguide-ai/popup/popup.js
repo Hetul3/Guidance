@@ -41,6 +41,12 @@ const agentStatusLabel = document.getElementById('agent-status-label');
 const agentModelLabel = document.getElementById('agent-model-label');
 const agentToolLabel = document.getElementById('agent-tool-label');
 const agentMessageLabel = document.getElementById('agent-message-label');
+const agentLogList = document.getElementById('agent-log-list');
+const agentLogClearButton = document.getElementById('agent-log-clear');
+
+let agentLogEntries = [];
+let agentControlsLocked = false;
+let lastSubmittedGoal = null;
 
 let tavilyRetryAfterSave = false;
 let lastTavilyRequest = null;
@@ -680,6 +686,7 @@ if (tavilyQueryInput) {
 }
 
 const setAgentControlsBusy = (busy) => {
+  agentControlsLocked = busy;
   if (agentStartButton) {
     agentStartButton.disabled = busy;
   }
@@ -689,6 +696,144 @@ const setAgentControlsBusy = (busy) => {
   if (agentResetButton) {
     agentResetButton.disabled = busy;
   }
+};
+
+const updateAgentButtons = (status) => {
+  if (agentControlsLocked) {
+    return;
+  }
+  const normalized = (status || '').toString().toLowerCase();
+  const running = normalized === 'running' || normalized === 'waiting';
+  if (agentStartButton) {
+    agentStartButton.disabled = running;
+  }
+  if (agentStopButton) {
+    agentStopButton.disabled = !running;
+  }
+  // Reset stays available unless explicitly locked.
+};
+
+const formatLogTimestamp = (timestamp) => {
+  try {
+    return new Date(timestamp).toLocaleTimeString();
+  } catch (_error) {
+    return '';
+  }
+};
+
+const summariseLogDetail = (entry) => {
+  const clone = { ...entry };
+  delete clone.id;
+  delete clone.timestamp;
+  delete clone.stage;
+  const keys = Object.keys(clone);
+  if (!keys.length) {
+    return '';
+  }
+  try {
+    const json = JSON.stringify(clone, null, 2);
+    return json.length > 400 ? `${json.slice(0, 400)}…` : json;
+  } catch (_error) {
+    return keys
+      .map((key) => `${key}: ${typeof clone[key] === 'object' ? JSON.stringify(clone[key]) : clone[key]}`)
+      .join(' | ');
+  }
+};
+
+const ensureAgentLogList = () => {
+  if (!agentLogList) {
+    return null;
+  }
+  if (agentLogList.firstElementChild && agentLogList.firstElementChild.classList.contains('agent-log-empty')) {
+    agentLogList.removeChild(agentLogList.firstElementChild);
+  }
+  return agentLogList;
+};
+
+const createAgentLogElement = (entry) => {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'agent-log-entry';
+
+  const header = document.createElement('div');
+  header.className = 'agent-log-entry-header';
+  const timeSpan = document.createElement('span');
+  timeSpan.textContent = formatLogTimestamp(entry.timestamp);
+  const stageSpan = document.createElement('span');
+  stageSpan.textContent = entry.stage || 'log';
+  header.append(timeSpan, stageSpan);
+
+  wrapper.appendChild(header);
+
+  const detail = summariseLogDetail(entry);
+  if (detail) {
+    const body = document.createElement('div');
+    body.className = 'agent-log-entry-body';
+    body.textContent = detail;
+    wrapper.appendChild(body);
+  }
+
+  return wrapper;
+};
+
+const appendAgentLogEntry = (entry, { persist = true } = {}) => {
+  const container = ensureAgentLogList();
+  if (!container || !entry || typeof entry !== 'object') {
+    return;
+  }
+
+  const exists = agentLogEntries.some((existing) => existing.id === entry.id);
+  if (persist) {
+    if (exists) {
+      return;
+    }
+    agentLogEntries.push(entry);
+    if (agentLogEntries.length > 200) {
+      const overflow = agentLogEntries.length - 200;
+      agentLogEntries = agentLogEntries.slice(-200);
+      for (let i = 0; i < overflow; i += 1) {
+        const lastChild = container.lastElementChild;
+        if (lastChild) {
+          container.removeChild(lastChild);
+        }
+      }
+    }
+  }
+
+  if (!exists || !persist) {
+    const element = createAgentLogElement(entry);
+    container.prepend(element);
+  }
+};
+
+const renderAgentLogEntries = (entries = []) => {
+  if (!agentLogList) {
+    return;
+  }
+  agentLogEntries = Array.isArray(entries) ? [...entries] : [];
+  agentLogList.innerHTML = '';
+  if (!agentLogEntries.length) {
+    const empty = document.createElement('div');
+    empty.className = 'agent-log-entry agent-log-empty';
+    empty.textContent = 'Logs appear here once the agent runs.';
+    agentLogList.appendChild(empty);
+    return;
+  }
+
+  agentLogEntries.forEach((entry) => {
+    appendAgentLogEntry(entry, { persist: false });
+  });
+};
+
+const clearAgentLogUI = () => {
+  agentLogEntries = [];
+  if (!agentLogList) {
+    return;
+  }
+  agentLogList.innerHTML = '';
+  const empty = document.createElement('div');
+  empty.className = 'agent-log-entry agent-log-empty';
+  empty.textContent = 'Logs appear here once the agent runs.';
+  agentLogList.appendChild(empty);
 };
 
 const applyAgentUpdate = (update = {}) => {
@@ -705,6 +850,7 @@ const applyAgentUpdate = (update = {}) => {
     const message = update.error || update.message || (update.awaitingInterrupt ? 'Awaiting page changes…' : '–');
     agentMessageLabel.textContent = message;
   }
+  updateAgentButtons(update.status);
 };
 
 const refreshAgentStatus = async () => {
@@ -732,10 +878,27 @@ const collectAgentOptions = () => {
   return options;
 };
 
+const loadAgentLogs = async () => {
+  try {
+    const res = await runtimeSendMessage({ type: 'wga-agent-get-logs' });
+    if (res && res.ok && Array.isArray(res.logs)) {
+      agentLogEntries = res.logs;
+      renderAgentLogEntries(agentLogEntries);
+    }
+  } catch (error) {
+    console.error('[WebGuideAI][Popup] Failed to fetch agent logs:', error);
+  }
+};
+
 const handleAgentStart = async () => {
   const goal = (agentGoalInput?.value || '').trim();
   if (!goal) {
     applyAgentUpdate({ status: 'error', message: 'Enter a goal to start the agent.' });
+    return;
+  }
+
+  if (lastSubmittedGoal && goal === lastSubmittedGoal) {
+    applyAgentUpdate({ status: 'error', message: 'Modify the goal before starting again.' });
     return;
   }
 
@@ -757,11 +920,13 @@ const handleAgentStart = async () => {
       throw new Error(response?.error || 'Failed to start agent.');
     }
     applyAgentUpdate({ status: 'running', message: 'Agent starting…' });
+    lastSubmittedGoal = goal;
   } catch (error) {
     console.error('[WebGuideAI][Popup] Agent start failed:', error);
     applyAgentUpdate({ status: 'error', message: error.message });
   } finally {
     setAgentControlsBusy(false);
+    updateAgentButtons(agentStatusLabel?.textContent || '');
   }
 };
 
@@ -770,11 +935,16 @@ const handleAgentStop = async () => {
   try {
     await runtimeSendMessage({ type: 'wga-agent-stop', manual: true });
     applyAgentUpdate({ status: 'stopped', message: 'Agent stopped.' });
+    lastSubmittedGoal = null;
+    if (agentGoalInput) {
+      agentGoalInput.value = '';
+    }
   } catch (error) {
     console.error('[WebGuideAI][Popup] Agent stop failed:', error);
     applyAgentUpdate({ status: 'error', message: error.message });
   } finally {
     setAgentControlsBusy(false);
+    updateAgentButtons(agentStatusLabel?.textContent || '');
   }
 };
 
@@ -783,11 +953,17 @@ const handleAgentReset = async () => {
   try {
     await runtimeSendMessage({ type: 'wga-agent-reset' });
     applyAgentUpdate({ status: 'idle', message: 'Session reset.' });
+    clearAgentLogUI();
+    lastSubmittedGoal = null;
+    if (agentGoalInput) {
+      agentGoalInput.value = '';
+    }
   } catch (error) {
     console.error('[WebGuideAI][Popup] Agent reset failed:', error);
     applyAgentUpdate({ status: 'error', message: error.message });
   } finally {
     setAgentControlsBusy(false);
+    updateAgentButtons(agentStatusLabel?.textContent || '');
   }
 };
 
@@ -801,6 +977,17 @@ if (agentStopButton) {
 
 if (agentResetButton) {
   agentResetButton.addEventListener('click', handleAgentReset);
+}
+
+if (agentLogClearButton) {
+  agentLogClearButton.addEventListener('click', async () => {
+    try {
+      await runtimeSendMessage({ type: 'wga-agent-clear-log' });
+      clearAgentLogUI();
+    } catch (error) {
+      console.error('[WebGuideAI][Popup] Failed to clear agent logs:', error);
+    }
+  });
 }
 
 const setStatus = (message, isError = false) => {
@@ -941,6 +1128,7 @@ if (domSnapshotButton) {
 
 loadStoredApiKey();
 refreshAgentStatus();
+loadAgentLogs();
 
 chrome.runtime.onMessage.addListener((message) => {
   if (!message || typeof message !== 'object') {
@@ -949,6 +1137,14 @@ chrome.runtime.onMessage.addListener((message) => {
 
   if (message.type === 'wga-agent-update') {
     applyAgentUpdate(message.data || {});
+  }
+
+  if (message.type === 'wga-agent-log' && message.log) {
+    appendAgentLogEntry(message.log);
+  }
+
+  if (message.type === 'wga-agent-log-cleared') {
+    clearAgentLogUI();
   }
 });
 loadStoredTavilyKey();

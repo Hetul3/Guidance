@@ -348,6 +348,69 @@
         font-weight: 600;
       }
 
+      .agent-log-card {
+        margin-top: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        border-top: 1px solid rgba(148, 163, 184, 0.25);
+        padding-top: 12px;
+      }
+
+      .agent-log-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .agent-log-list {
+        max-height: 200px;
+        overflow-y: auto;
+        border-radius: 12px;
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        background: rgba(15, 23, 42, 0.4);
+        padding: 8px 0;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+        font-size: 12px;
+      }
+
+      .agent-log-entry {
+        padding: 6px 12px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .agent-log-entry:last-child {
+        border-bottom: none;
+      }
+
+      .agent-log-entry-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        color: rgba(226, 232, 240, 0.85);
+        font-weight: 500;
+      }
+
+      .agent-log-entry-body {
+        color: rgba(148, 163, 184, 0.9);
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .agent-log-empty {
+        opacity: 0.65;
+        text-align: center;
+        padding: 12px 0;
+      }
+
       .chat-status {
         font-size: 12px;
         color: var(--text-secondary);
@@ -551,6 +614,16 @@
           <p><strong>Model:</strong> <span id="agent-model-label">–</span></p>
           <p><strong>Last tool:</strong> <span id="agent-tool-label">–</span></p>
           <p><strong>Message:</strong> <span id="agent-message-label">–</span></p>
+        </div>
+
+        <div class="agent-log-card">
+          <div class="agent-log-header">
+            <h3 class="card-title" style="font-size: 15px; margin: 0;">Event Log</h3>
+            <button id="agent-log-clear" type="button" class="ghost small">Clear Log</button>
+          </div>
+          <div id="agent-log-list" class="agent-log-list" aria-live="polite">
+            <div class="agent-log-entry agent-log-empty">Logs appear here once the agent runs.</div>
+          </div>
         </div>
       </section>
 
