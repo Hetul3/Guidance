@@ -1,8 +1,54 @@
 (() => {
-  if (window.__WEBGUIDE_AI_CONTENT_ACTIVE__) {
+  const MARKER_KEY = '__WEBGUIDE_AI_CONTENT_ACTIVE__';
+  const runtimeId = chrome?.runtime?.id || `legacy-${Date.now()}`;
+  const marker = window[MARKER_KEY];
+
+  if (marker && marker.runtimeId === runtimeId) {
+    console.debug('[WebGuideAI][content] Existing content script instance detected for runtime', runtimeId);
     return;
   }
-  window.__WEBGUIDE_AI_CONTENT_ACTIVE__ = true;
+
+  if (marker && typeof marker.cleanup === 'function') {
+    console.debug('[WebGuideAI][content] Cleaning up previous instance for runtime', marker.runtimeId);
+    try {
+      marker.cleanup();
+    } catch (error) {
+      console.warn('[WebGuideAI][content] Cleanup from previous instance failed', error);
+    }
+  }
+
+  const cleanupCallbacks = [];
+  const registerCleanup = (fn) => {
+    if (typeof fn === 'function') {
+      cleanupCallbacks.push(fn);
+    }
+  };
+
+  let destroyed = false;
+  const cleanupSelf = () => {
+    if (destroyed) {
+      return;
+    }
+    destroyed = true;
+    console.debug('[WebGuideAI][content] Running cleanup for runtime', runtimeId);
+    cleanupCallbacks.splice(0).forEach((fn) => {
+      try {
+        fn();
+      } catch (error) {
+        console.warn('[WebGuideAI][content] Cleanup callback failed', error);
+      }
+    });
+  };
+
+  window[MARKER_KEY] = {
+    runtimeId,
+    ts: Date.now(),
+    cleanup: cleanupSelf
+  };
+
+  const historyOriginals = new Map();
+
+  console.info('[WebGuideAI][content] Initialising content script');
 
   const overlayId = 'webguide-ai-overlay';
   const styleSelector = 'link[data-webguide-ai-style="true"]';
@@ -22,6 +68,54 @@
     target.appendChild(link);
   };
 
+  const safeSendMessage = (payload, callback) => {
+    if (destroyed) {
+      if (typeof callback === 'function') {
+        callback(undefined, new Error('Content script shutdown'));
+      }
+      return;
+    }
+    if (!chrome?.runtime?.id) {
+      console.warn('[WebGuideAI][content] runtime ID unavailable (likely reloading)');
+      cleanupSelf();
+      if (typeof callback === 'function') {
+        callback(undefined, new Error('Extension context invalidated'));
+      }
+      return;
+    }
+    try {
+      if (typeof callback === 'function') {
+        chrome.runtime.sendMessage(payload, (response) => {
+          if (chrome.runtime.lastError) {
+            const err = new Error(chrome.runtime.lastError.message);
+            console.warn('[WebGuideAI][content] runtime message failed', payload?.type, err.message);
+            if (/Extension context invalidated/i.test(err.message)) {
+              cleanupSelf();
+            }
+            callback(undefined, err);
+            return;
+          }
+          callback(response, null);
+        });
+        return;
+      }
+
+      chrome.runtime.sendMessage(payload, () => {
+        if (chrome.runtime.lastError && /Extension context invalidated/i.test(chrome.runtime.lastError.message)) {
+          cleanupSelf();
+        }
+      });
+    } catch (error) {
+      console.error('[WebGuideAI][content] runtime message threw', payload?.type, error);
+      if (/Extension context invalidated/i.test(error?.message || '')) {
+        cleanupSelf();
+      }
+      if (typeof callback === 'function') {
+        callback(undefined, error);
+      }
+    }
+  };
+
   const overlayLogMap = new Map();
   const pendingOverlayLogs = [];
   let overlayElement = null;
@@ -33,6 +127,70 @@
   let detectionEnabled = false;
   let overlayReportedActive = false;
   let overlayLogsLoaded = false;
+
+  const getElementFromRegistry = (targetId) => {
+    if (!targetId) {
+      return null;
+    }
+
+    const registry = window.WebGuideAI?.elementRegistry;
+    if (!registry) {
+      return null;
+    }
+
+    try {
+      if (typeof registry.get === 'function') {
+        return registry.get(targetId) || null;
+      }
+
+      if (registry[targetId]) {
+        return registry[targetId];
+      }
+    } catch (_error) {
+      return null;
+    }
+
+    return null;
+  };
+
+  const runVisualOverlayAction = async ({ action, targetId, message }) => {
+    if (!targetId) {
+      throw new Error('Missing targetId for overlay action');
+    }
+
+    const element = getElementFromRegistry(targetId);
+    if (!element) {
+      throw new Error(`Element ${targetId} is not available in the current DOM snapshot.`);
+    }
+
+    const module = await loadOverlayModule();
+    if (action === 'highlight') {
+      module.highlightElement(element, message || '');
+      return { ok: true };
+    }
+
+    if (action === 'pulse') {
+      module.pulseAtElement(element);
+      return { ok: true };
+    }
+
+    throw new Error(`Unsupported overlay action: ${action}`);
+  };
+
+  const scrollViewport = ({ direction, targetId }) => {
+    if (direction === 'toElement' && targetId) {
+      const element = getElementFromRegistry(targetId);
+      if (element && element.scrollIntoView) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return { ok: true };
+      }
+      throw new Error(`Element ${targetId} is not available for scrolling.`);
+    }
+
+    const delta = direction === 'up' ? -window.innerHeight * 0.6 : window.innerHeight * 0.6;
+    window.scrollBy({ top: delta, behavior: 'smooth' });
+    return { ok: true };
+  };
 
   const generateLogId = () => {
     if (window.crypto && typeof window.crypto.randomUUID === 'function') {
@@ -222,6 +380,9 @@
   };
 
   const appendOverlayLogEntry = (entry, options = {}) => {
+    if (destroyed) {
+      return;
+    }
     if (!entry) {
       return;
     }
@@ -232,7 +393,7 @@
     enrichedEntry.timestamp = typeof enrichedEntry.timestamp === 'number' ? enrichedEntry.timestamp : Date.now();
 
     if (persist) {
-      chrome.runtime.sendMessage({ type: 'wga-log-entry', entry: enrichedEntry }).catch(() => {});
+      safeSendMessage({ type: 'wga-log-entry', entry: enrichedEntry });
     }
 
     ensureOverlayElements();
@@ -291,15 +452,15 @@
     }
     overlayLogsLoaded = true;
     if (persist) {
-      chrome.runtime.sendMessage({ type: 'wga-clear-log' }).catch(() => {});
+      safeSendMessage({ type: 'wga-clear-log' });
     }
   };
 
   const requestExistingLogs = (callback) => {
     overlayLogsLoaded = false;
     ensureOverlayElements();
-    chrome.runtime.sendMessage({ type: 'wga-request-log' }, (response) => {
-      if (chrome.runtime.lastError) {
+    safeSendMessage({ type: 'wga-request-log' }, (response, error) => {
+      if (error) {
         overlayLogsLoaded = true;
         flushPendingOverlayLogs();
         if (typeof callback === 'function') {
@@ -381,6 +542,9 @@
   };
 
   const showOverlay = (triggerReason = 'overlay-open', options = {}) => {
+    if (destroyed) {
+      return;
+    }
     const { skipLogSync = false } = options;
     setOverlayVisibility(true);
     detectionEnabled = true;
@@ -399,11 +563,14 @@
 
     if (!overlayReportedActive) {
       overlayReportedActive = true;
-      chrome.runtime.sendMessage({ type: 'wga-overlay-activated' }).catch(() => {});
+      safeSendMessage({ type: 'wga-overlay-activated' });
     }
   };
 
   const hideOverlay = (options = {}) => {
+    if (destroyed) {
+      return;
+    }
     const { manual = false } = options;
     setOverlayVisibility(false);
     detectionEnabled = false;
@@ -520,6 +687,14 @@
   };
 
   const runDomSnapshot = async ({ includeHidden = false } = {}) => {
+    if (destroyed) {
+      return { ok: false, error: 'Content script shutdown' };
+    }
+    if (!chrome?.runtime?.id) {
+      console.warn('[WebGuideAI][content] DOM snapshot aborted – runtime unavailable');
+      cleanupSelf();
+      return { ok: false, error: 'Extension context invalidated' };
+    }
     try {
       const moduleUrl = chrome.runtime && chrome.runtime.getURL ? chrome.runtime.getURL('dom-snapshot.js') : null;
       if (!moduleUrl) {
@@ -563,6 +738,9 @@
   let lastScanTime = 0;
 
   const dispatchScanEvent = (reason, result, extra = {}) => {
+    if (destroyed) {
+      return;
+    }
     const detail = {
       reason,
       url: window.location.href,
@@ -588,6 +766,7 @@
     appendOverlayLogEntry(logEntry, { persist: true });
 
     window.dispatchEvent(new CustomEvent('webguide:scan-complete', { detail }));
+    safeSendMessage({ type: 'wga-scan-event', detail });
 
     if (overlayVisible) {
       const label = reason ? reason.replace(/-/g, ' ') : 'scan complete';
@@ -599,6 +778,9 @@
   };
 
   const markPendingTargetStatus = (reason) => {
+    if (destroyed) {
+      return;
+    }
     const guideState = window.WebGuideAI || {};
     const targetId = guideState.pendingTargetId;
     const registry = guideState.elementRegistry;
@@ -629,6 +811,9 @@
   };
 
   const finalizeScan = (reason, result) => {
+    if (destroyed) {
+      return;
+    }
     if (result?.ok) {
       lastKnownUrl = window.location.href;
       window.WebGuideAI = {
@@ -659,7 +844,7 @@
   };
 
   const triggerDomRescan = (reason) => {
-    if (!detectionEnabled) {
+    if (destroyed || !detectionEnabled) {
       return;
     }
 
@@ -700,7 +885,7 @@
   };
 
   const queueDomRescan = (reason, debounceMs = SCAN_DEBOUNCE_MS) => {
-    if (!detectionEnabled) {
+    if (destroyed || !detectionEnabled) {
       return;
     }
 
@@ -755,14 +940,23 @@
     return bodyLevelChange || addedElements + removedElements >= MUTATION_NODE_THRESHOLD;
   }
 
-  window.addEventListener('beforeunload', () => stopDomObserver(), { once: true });
+  const beforeUnloadHandler = () => {
+    stopDomObserver();
+  };
+  window.addEventListener('beforeunload', beforeUnloadHandler, { once: true });
+  registerCleanup(() => window.removeEventListener('beforeunload', beforeUnloadHandler));
 
   const patchHistoryMethod = (method) => {
     if (!window.history || typeof window.history[method] !== 'function') {
       return;
     }
 
+    if (historyOriginals.has(method)) {
+      return;
+    }
+
     const original = window.history[method];
+    historyOriginals.set(method, original);
     window.history[method] = function patchedHistoryMethod(...args) {
       const result = original.apply(this, args);
       queueDomRescan('history-state');
@@ -773,13 +967,18 @@
   patchHistoryMethod('pushState');
   patchHistoryMethod('replaceState');
 
-  window.addEventListener('popstate', () => {
+  const popstateHandler = () => {
+    if (destroyed) {
+      return;
+    }
     if (window.location.href === lastKnownUrl) {
       queueDomRescan('popstate');
     } else {
       queueDomRescan('popstate-url');
     }
-  });
+  };
+  window.addEventListener('popstate', popstateHandler);
+  registerCleanup(() => window.removeEventListener('popstate', popstateHandler));
 
   function handleMessage(message, _sender, sendResponse) {
     if (!message || typeof message !== 'object') {
@@ -840,10 +1039,74 @@
       return false;
     }
 
+    if (message.type === 'wga-hide-overlay') {
+      hideOverlay({ manual: Boolean(message.manual) });
+      sendResponse?.({ ok: true });
+      return false;
+    }
+
+    if (message.type === 'wga-get-dom-snapshot') {
+      ensureDomObserverActive();
+      runDomSnapshot({ includeHidden: Boolean(message.includeHidden) })
+        .then((result) => {
+          const latestSnapshot = window.WebGuideAI?.lastDomSnapshot || {};
+          const currentMutationVersion = typeof latestSnapshot.mutationVersion === 'number'
+            ? latestSnapshot.mutationVersion
+            : null;
+          const responsePayload = {
+            ok: result.ok,
+            rawCount: result.rawCount,
+            llmCount: result.llmCount,
+            mutationVersion: currentMutationVersion,
+            snapshot: Array.isArray(latestSnapshot.llm) ? latestSnapshot.llm : [],
+            url: window.location.href
+          };
+          sendResponse?.(responsePayload);
+        })
+        .catch((error) => {
+          sendResponse?.({ ok: false, error: error.message });
+        });
+      return true;
+    }
+
+    if (message.type === 'wga-run-overlay') {
+      runVisualOverlayAction({
+        action: message.action,
+        targetId: message.targetId,
+        message: message.message
+      })
+        .then((res) => sendResponse?.(res))
+        .catch((error) => {
+          sendResponse?.({ ok: false, error: error.message });
+        });
+      return true;
+    }
+
+    if (message.type === 'wga-scroll') {
+      try {
+        const result = scrollViewport({ direction: message.direction, targetId: message.targetId });
+        sendResponse?.(result);
+      } catch (error) {
+        sendResponse?.({ ok: false, error: error.message });
+      }
+      return false;
+    }
+
+    if (message.type === 'wga-clear-overlay-log') {
+      clearOverlayLog(Boolean(message.persist));
+      sendResponse?.({ ok: true });
+      return false;
+    }
+
     return false;
   }
 
   chrome.runtime.onMessage.addListener(handleMessage);
+  registerCleanup(() => {
+    if (chrome?.runtime?.onMessage?.removeListener) {
+      chrome.runtime.onMessage.removeListener(handleMessage);
+    }
+  });
 
   ensureStylesheet();
 
@@ -909,8 +1172,8 @@
     }
   };
 
-  window.addEventListener('webguide:pending-target-missing', (event) => {
-    if (!overlayVisible) {
+  const pendingTargetListener = (event) => {
+    if (destroyed || !overlayVisible) {
       return;
     }
 
@@ -928,6 +1191,30 @@
       ok: false,
       error: 'Pending target not found'
     }, { persist: true });
+  };
+  window.addEventListener('webguide:pending-target-missing', pendingTargetListener);
+  registerCleanup(() => window.removeEventListener('webguide:pending-target-missing', pendingTargetListener));
+
+  registerCleanup(() => {
+    detectionEnabled = false;
+    stopDomObserver();
+    if (scheduledScanTimer) {
+      clearTimeout(scheduledScanTimer);
+      scheduledScanTimer = null;
+    }
+    if (cooldownTimer) {
+      clearTimeout(cooldownTimer);
+      cooldownTimer = null;
+    }
+    pendingReason = null;
+    isScanning = false;
+    historyOriginals.forEach((original, method) => {
+      if (window.history && typeof original === 'function') {
+        window.history[method] = original;
+      }
+    });
+    historyOriginals.clear();
+    console.debug('[WebGuideAI][content] Cleanup executed');
   });
 
 })();

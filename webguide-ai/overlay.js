@@ -68,34 +68,26 @@ const ensureOverlayEnvironment = () => {
 
 const createPulse = (rect, container) => {
   const baseSize = Math.max(rect.width, rect.height);
-  const diameter = Math.max(Math.min(baseSize * 0.85, 120), 28);
+  const diameter = Math.max(Math.min(baseSize * 0.95, 160), 40);
   const top = rect.top + rect.height / 2 - diameter / 2;
   const left = rect.left + rect.width / 2 - diameter / 2;
 
-  const spawnPulse = () => {
-    const pulse = document.createElement('div');
-    pulse.className = 'wga-pulse';
-    pulse.style.width = `${diameter}px`;
-    pulse.style.height = `${diameter}px`;
-    pulse.style.top = `${top}px`;
-    pulse.style.left = `${left}px`;
+  container.querySelectorAll('.wga-pulse').forEach((node) => node.remove());
 
-    pulse.addEventListener('animationend', () => {
-      pulse.remove();
-    });
+  const pulse = document.createElement('div');
+  pulse.className = 'wga-pulse';
+  pulse.style.width = `${diameter}px`;
+  pulse.style.height = `${diameter}px`;
+  pulse.style.top = `${top}px`;
+  pulse.style.left = `${left}px`;
 
-    container.appendChild(pulse);
+  container.appendChild(pulse);
 
-    requestAnimationFrame(() => {
-      pulse.classList.add('wga-pulse--animating');
-    });
-  };
+  requestAnimationFrame(() => {
+    pulse.classList.add('wga-pulse--active');
+  });
 
-  spawnPulse();
-  setTimeout(spawnPulse, 180);
-  setTimeout(spawnPulse, 360);
-
-  return null;
+  return pulse;
 };
 
 const createHighlight = (rect, message, container) => {

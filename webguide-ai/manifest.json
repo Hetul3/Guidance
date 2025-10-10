@@ -9,8 +9,13 @@
   },
   "permissions": ["scripting", "activeTab", "storage", "webNavigation"],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
+  "host_permissions": [
+    "https://generativelanguage.googleapis.com/*",
+    "https://api.tavily.com/*"
+  ],
   "web_accessible_resources": [
     {
       "resources": [

@@ -107,3 +107,14 @@ Multi-step automation (support for tool chaining)
 - DOM snapshot logging works and element IDs remain accessible via `window.WebGuideAI.elementRegistry`.  
 - Gemini chat renders Markdown responses safely; invalid keys prompt for re-entry without crashing the UI.  
 - Tavily search respects advanced overrides (time range, start/end date, max results, chunk count, snippet format, auto-parameters) and surfaces clear error messaging for missing/invalid keys.  
+- Agent workflow drives highlight/pulse/scroll guidance, pauses on `wait`, resumes after navigation/mutation interrupts, and halts gracefully after repeated failures with an `ask_user` step.  
+
+## Agent Architecture Snapshot  
+- **Planner** — Gemini 2.5 Pro → 2.5 Flash → 2.0 Flash fallback, emitting ≤3 immediate JSON actions and using `search` / `get_dom_snapshot` / visual tools via Gemini function calling.  
+- **Executor** — Gemini 2.0 Flash Lite → 2.0 Flash fallback for DOM grounding. Falls back to heuristic scoring in `agent/grounding.js` when the model response is empty.  
+- **Tools** — Schemas live in `agent/tools.js` and `prompts/tool_schemas.json`; validated in `agent/validators.js` before execution. Visual tools resolve IDs using the content script registry.  
+- **Memory** — `agent/memory.js` stores session metadata (goal, plan, search cache, snapshot meta, diagnostics) in `chrome.storage.local`.  
+- **Rate limiting** — `agent/rateLimiter.js` enforces per-model RPM windows with exponential wait (≤2s) before surfacing a cooldown error.  
+- **Interrupts** — `background.js` forwards `webNavigation` events and content-script `wga-scan-event` payloads to the orchestrator, which re-runs planning when awaiting changes.  
+- **Prompts** — `prompts/system_planner.txt` and `prompts/system_executor.txt` set behaviour constraints; `prompts/answer_cleaner.txt` describes snippet filtering heuristics.  
+- **Popup Console** — Start/Stop/Reset with live telemetry (`status`, `model`, `lastTool`, `message`) by listening to `wga-agent-update` broadcasts.

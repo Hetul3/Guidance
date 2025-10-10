@@ -15,6 +15,7 @@ let elementIdCounter = 0;
 let mutationObserver = null;
 let mutationVersion = 0;
 const elementRegistry = new Map();
+const MAX_LLM_RESULTS = 50;
 
 const LABEL_LOOKUP_SELECTOR = [
   'label',
@@ -682,7 +683,7 @@ export function collectClickableElements(includeHidden = false) {
     });
   }
 
-  const filteredLlm = filterLlmResults(rawResults, llmResults);
+  const filteredLlm = filterLlmResults(rawResults, llmResults).slice(0, MAX_LLM_RESULTS);
 
   return {
     raw: rawResults,
@@ -697,5 +698,18 @@ if (typeof window !== 'undefined') {
     ...(window.WebGuideAI || {}),
     collectClickableElements,
     elementRegistry
+  };
+}
+
+export const MAX_CLICKABLE_RESULTS = MAX_LLM_RESULTS;
+
+export function getLLMSnapshot(includeHidden = false) {
+  const snapshot = collectClickableElements(includeHidden);
+  return {
+    llm: snapshot.llm,
+    rawCount: snapshot.raw.length,
+    llmCount: snapshot.llm.length,
+    mutationVersion,
+    registry: snapshot.registry
   };
 }

@@ -30,8 +30,31 @@ const tavilyChunksInput = document.getElementById('tavily-chunks-per-source');
 const tavilyRawContentSelect = document.getElementById('tavily-raw-content');
 const tavilyAutoParametersCheckbox = document.getElementById('tavily-auto-parameters');
 
+const agentGoalInput = document.getElementById('agent-goal');
+const agentTimeRangeSelect = document.getElementById('agent-time-range');
+const agentMaxResultsInput = document.getElementById('agent-max-results');
+const agentChunksInput = document.getElementById('agent-chunks');
+const agentStartButton = document.getElementById('agent-start');
+const agentStopButton = document.getElementById('agent-stop');
+const agentResetButton = document.getElementById('agent-reset');
+const agentStatusLabel = document.getElementById('agent-status-label');
+const agentModelLabel = document.getElementById('agent-model-label');
+const agentToolLabel = document.getElementById('agent-tool-label');
+const agentMessageLabel = document.getElementById('agent-message-label');
+
 let tavilyRetryAfterSave = false;
 let lastTavilyRequest = null;
+
+const runtimeSendMessage = (payload) =>
+  new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(payload, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve(response);
+    });
+  });
 
 const loadLlmModule = (() => {
   let modulePromise;
@@ -656,6 +679,130 @@ if (tavilyQueryInput) {
   });
 }
 
+const setAgentControlsBusy = (busy) => {
+  if (agentStartButton) {
+    agentStartButton.disabled = busy;
+  }
+  if (agentStopButton) {
+    agentStopButton.disabled = busy;
+  }
+  if (agentResetButton) {
+    agentResetButton.disabled = busy;
+  }
+};
+
+const applyAgentUpdate = (update = {}) => {
+  if (agentStatusLabel) {
+    agentStatusLabel.textContent = update.status || 'Idle';
+  }
+  if (agentModelLabel) {
+    agentModelLabel.textContent = update.lastModel || '–';
+  }
+  if (agentToolLabel) {
+    agentToolLabel.textContent = update.lastTool || '–';
+  }
+  if (agentMessageLabel) {
+    const message = update.error || update.message || (update.awaitingInterrupt ? 'Awaiting page changes…' : '–');
+    agentMessageLabel.textContent = message;
+  }
+};
+
+const refreshAgentStatus = async () => {
+  try {
+    const res = await runtimeSendMessage({ type: 'wga-agent-status' });
+    if (res && res.ok) {
+      applyAgentUpdate(res.status || {});
+    }
+  } catch (error) {
+    console.error('[WebGuideAI][Popup] Failed to fetch agent status:', error);
+  }
+};
+
+const collectAgentOptions = () => {
+  const options = {};
+  if (agentTimeRangeSelect) {
+    options.timeRange = agentTimeRangeSelect.value;
+  }
+  if (agentMaxResultsInput) {
+    options.maxResults = Number.parseInt(agentMaxResultsInput.value, 10) || 1;
+  }
+  if (agentChunksInput) {
+    options.chunksPerSource = Number.parseInt(agentChunksInput.value, 10) || 3;
+  }
+  return options;
+};
+
+const handleAgentStart = async () => {
+  const goal = (agentGoalInput?.value || '').trim();
+  if (!goal) {
+    applyAgentUpdate({ status: 'error', message: 'Enter a goal to start the agent.' });
+    return;
+  }
+
+  const tab = await getActiveTab();
+  if (!tab) {
+    applyAgentUpdate({ status: 'error', message: 'No active tab detected.' });
+    return;
+  }
+
+  setAgentControlsBusy(true);
+  try {
+    const response = await runtimeSendMessage({
+      type: 'wga-agent-start',
+      goal,
+      tabId: tab.id,
+      options: collectAgentOptions()
+    });
+    if (!response || response.ok === false) {
+      throw new Error(response?.error || 'Failed to start agent.');
+    }
+    applyAgentUpdate({ status: 'running', message: 'Agent starting…' });
+  } catch (error) {
+    console.error('[WebGuideAI][Popup] Agent start failed:', error);
+    applyAgentUpdate({ status: 'error', message: error.message });
+  } finally {
+    setAgentControlsBusy(false);
+  }
+};
+
+const handleAgentStop = async () => {
+  setAgentControlsBusy(true);
+  try {
+    await runtimeSendMessage({ type: 'wga-agent-stop', manual: true });
+    applyAgentUpdate({ status: 'stopped', message: 'Agent stopped.' });
+  } catch (error) {
+    console.error('[WebGuideAI][Popup] Agent stop failed:', error);
+    applyAgentUpdate({ status: 'error', message: error.message });
+  } finally {
+    setAgentControlsBusy(false);
+  }
+};
+
+const handleAgentReset = async () => {
+  setAgentControlsBusy(true);
+  try {
+    await runtimeSendMessage({ type: 'wga-agent-reset' });
+    applyAgentUpdate({ status: 'idle', message: 'Session reset.' });
+  } catch (error) {
+    console.error('[WebGuideAI][Popup] Agent reset failed:', error);
+    applyAgentUpdate({ status: 'error', message: error.message });
+  } finally {
+    setAgentControlsBusy(false);
+  }
+};
+
+if (agentStartButton) {
+  agentStartButton.addEventListener('click', handleAgentStart);
+}
+
+if (agentStopButton) {
+  agentStopButton.addEventListener('click', handleAgentStop);
+}
+
+if (agentResetButton) {
+  agentResetButton.addEventListener('click', handleAgentReset);
+}
+
 const setStatus = (message, isError = false) => {
   if (!statusMessage) {
     return;
@@ -793,4 +940,15 @@ if (domSnapshotButton) {
 }
 
 loadStoredApiKey();
+refreshAgentStatus();
+
+chrome.runtime.onMessage.addListener((message) => {
+  if (!message || typeof message !== 'object') {
+    return;
+  }
+
+  if (message.type === 'wga-agent-update') {
+    applyAgentUpdate(message.data || {});
+  }
+});
 loadStoredTavilyKey();

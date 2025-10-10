@@ -1,0 +1,1 @@
+Ignore navigation crumbs, headers such as "Home", "Settings", "Welcome", and disclaimers. Prioritise imperative sentences and button/link labels. Remove repeated whitespace and strip trailing punctuation unless essential to the instruction.

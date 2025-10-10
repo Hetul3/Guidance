@@ -1,0 +1,65 @@
+{
+  "tools": [
+    {
+      "name": "search",
+      "description": "Search the web for official or recent instructions/context",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "minLength": 3, "maxLength": 400 },
+          "time_range": {
+            "type": "string",
+            "enum": ["day", "week", "month", "year", "none"],
+            "default": "year"
+          },
+          "max_results": { "type": "integer", "minimum": 1, "maximum": 3, "default": 1 },
+          "chunks_per_source": { "type": "integer", "minimum": 1, "maximum": 3, "default": 3 }
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "get_dom_snapshot",
+      "description": "Return the current filtered LLM snapshot of clickable elements (≤50)",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "highlight",
+      "description": "Highlight an element by ID with a short message",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "targetId": { "type": "string" },
+          "message": { "type": "string", "maxLength": 120 }
+        },
+        "required": ["targetId"]
+      }
+    },
+    {
+      "name": "pulse",
+      "description": "Pulse a visual indicator at the target element by ID",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "targetId": { "type": "string" }
+        },
+        "required": ["targetId"]
+      }
+    },
+    {
+      "name": "scroll",
+      "description": "Scroll the page up/down to bring an element into view or move the viewport",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "direction": { "type": "string", "enum": ["up", "down", "toElement"] },
+          "targetId": { "type": "string" }
+        },
+        "required": ["direction"]
+      }
+    }
+  ]
+}

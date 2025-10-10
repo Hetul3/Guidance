@@ -330,6 +330,24 @@
         margin-top: 10px;
       }
 
+      .agent-controls {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 6px;
+      }
+
+      .agent-status {
+        display: grid;
+        gap: 4px;
+        font-size: 12px;
+        color: var(--text-secondary);
+      }
+
+      .agent-status strong {
+        font-weight: 600;
+      }
+
       .chat-status {
         font-size: 12px;
         color: var(--text-secondary);
@@ -490,6 +508,50 @@
         </div>
         <div id="tavily-result" class="response chat-markdown empty">Tavily answers appear here.</div>
         <p class="footnote">Tip: Tavily free tier includes 1,000 credits/month. Use advanced options to request richer snippets or more sources when you need deeper context.</p>
+      </section>
+
+      <section class="card" aria-live="polite">
+        <div class="card-header">
+          <h2 class="card-title">Agent Console</h2>
+          <p class="card-subtitle">Start the WebGuide AI planner/executor loop and monitor its status.</p>
+        </div>
+
+        <label for="agent-goal">Goal</label>
+        <textarea id="agent-goal" placeholder="Ex: Configure an EC2 instance"></textarea>
+
+        <div class="advanced-grid">
+          <label class="advanced-field" for="agent-time-range">
+            <span>Search time range</span>
+            <select id="agent-time-range">
+              <option value="year" selected>Past year</option>
+              <option value="month">Past month</option>
+              <option value="week">Past week</option>
+              <option value="day">Past day</option>
+              <option value="none">All time</option>
+            </select>
+          </label>
+          <label class="advanced-field" for="agent-max-results">
+            <span>Max results</span>
+            <input id="agent-max-results" type="number" min="1" max="3" value="1" />
+          </label>
+          <label class="advanced-field" for="agent-chunks">
+            <span>Chunks per source</span>
+            <input id="agent-chunks" type="number" min="1" max="3" value="3" />
+          </label>
+        </div>
+
+        <div class="agent-controls">
+          <button id="agent-start" type="button" class="primary">Start Agent</button>
+          <button id="agent-stop" type="button" class="ghost">Stop</button>
+          <button id="agent-reset" type="button" class="ghost">Reset</button>
+        </div>
+
+        <div class="agent-status">
+          <p><strong>Status:</strong> <span id="agent-status-label">Idle</span></p>
+          <p><strong>Model:</strong> <span id="agent-model-label">–</span></p>
+          <p><strong>Last tool:</strong> <span id="agent-tool-label">–</span></p>
+          <p><strong>Message:</strong> <span id="agent-message-label">–</span></p>
+        </div>
       </section>
 
       <p id="status-message" role="status" aria-live="polite"></p>

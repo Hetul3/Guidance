@@ -18,6 +18,8 @@ export class InvalidTavilyKeyError extends Error {
 
 const TAVILY_ENDPOINT = 'https://api.tavily.com/search';
 
+const MAX_QUERY_LENGTH = 400;
+
 const DEFAULT_REQUEST_OPTIONS = {
   includeAnswer: 'advanced',
   searchDepth: 'advanced',
@@ -109,7 +111,10 @@ export async function tavilySearch(query, options = {}) {
     throw new MissingTavilyKeyError();
   }
 
-  const trimmedQuery = query.trim();
+  let trimmedQuery = query.trim();
+  if (trimmedQuery.length > MAX_QUERY_LENGTH) {
+    trimmedQuery = trimmedQuery.slice(0, MAX_QUERY_LENGTH);
+  }
   const requestBody = buildRequestBody(trimmedQuery, options);
 
   console.log('[WebGuideAI][Tavily] Sending request', {

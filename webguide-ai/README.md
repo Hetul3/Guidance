@@ -7,6 +7,7 @@ WebGuide AI is a Chrome extension that overlays lightweight automation tooling o
 - **Gemini test chat** – Provide a Gemini API key, send prompts directly from the popup, and receive fully rendered Markdown responses with syntax-highlighted code blocks. Missing/invalid keys surface graceful UI prompts instead of console errors.
 - **DOM snapshot inventory** – Collect a rich, structured map of clickable elements (raw + LLM-friendly views) with contextual labels, visibility flags, MutationObserver versioning, and a global registry for ID lookups.
 - **Tavily search** – Store a Tavily API key once and run curated searches that return one authoritative source, up to three snippets in your preferred format (text/Markdown/HTML), and a concise answer tuned for LLM hand-offs.
+- **Agent orchestration** – A planner/executor loop (Gemini) coordinates Tavily, DOM snapshots, and overlay guidance while persisting history across navigations.
 
 Everything runs locally inside Chrome—no server required. Keys and results are stored in `chrome.storage.local` only.
 
@@ -49,12 +50,19 @@ Everything runs locally inside Chrome—no server required. Keys and results are
    - Enter your Tavily API key in the **Tavily Search** card and click **Save Key**. Keys stay local in `chrome.storage.local`.
    - Submit a query; advanced options let you bias recency (`timeRange`), supply explicit `startDate` / `endDate` bounds, request additional sources (`maxResults`), control snippet count (`chunksPerSource`), choose snippet format (plain text, Markdown, or HTML), and optionally enable Tavily auto-parameter tuning.
    - Responses include a synthesised answer followed by linked sources rendered according to the selected format. Invalid keys prompt for re-entry and auto-retry the last query once saved.
+7. Run the agent (optional):
+   - In the **Agent Console**, describe your goal (e.g., “Open account settings”).
+   - Adjust Tavily defaults (time range, max results, chunk count) if needed.
+   - Click **Start Agent**. The planner requests a DOM snapshot, optionally calls Tavily, and guides you with highlight/pulse/scroll actions. Use **Stop** to pause or **Reset** to clear history.
 
 ### Development Notes
 - `popup.js` handles UI orchestration (DOM snapshot messaging, overlay injection, API key management, Gemini chat).
 - `llm.js` wraps Gemini 2.0 Flash with deterministic settings (temperature 0) and typed errors for missing/invalid API keys.
 - `tavily.js` wraps Tavily's search endpoint with explicit parameters (`searchDepth: "advanced"`, controllable `maxResults`/`chunksPerSource`, selectable `includeRawContent` format, `autoParameters` toggle) and normalises snippet output while surfacing typed errors for missing/invalid keys.
 - `background.js` tracks tabs that have the overlay enabled, persists up to 50 scan log entries (reason, counts, errors), and rehydrates the overlay state on navigation so history survives full reloads.
+- `agent/` implements the end-to-end workflow: `orchestrator.js` (planner/executor loop), `memory.js` (chrome.storage persistence), `rateLimiter.js` (per-model RPM buckets and fallbacks), `tools.js`/`validators.js` (Gemini tool schemas), and `grounding.js` (DOM candidate ranking).
+- `prompts/` holds system messages and JSON tool schemas consumed by the agent.
+- `vendor/` contains trimmed third-party bundles (marked, DOMPurify, highlight.js) referenced by the popup and overlay.
 - `dom-snapshot.js` builds a rich element inventory (raw + filtered LLM view) and stores a live registry map for subsequent automation.
 - `styles/chat.css` / `styles/highlight.css` define the Markdown and code presentation; `vendor/marked-lite.js` and `vendor/dompurify-lite.js` keep parsing/sanitisation self-contained.
 
@@ -67,6 +75,16 @@ Everything runs locally inside Chrome—no server required. Keys and results are
   - Missing keys prompt for entry and focus the key input.
   - Invalid keys surface the guidance to replace the key and retry automatically.
   - Queries display a synthesised answer plus linked sources rendered in the chosen snippet format, respecting time-range/date overrides and custom max-results/chunk counts.
+- Agent workflow:
+  - Start the agent, confirm it requests a DOM snapshot, optionally uses Tavily once, and highlights the suggested control.
+  - Trigger SPA navigation or open a modal; the overlay persists and the agent resumes after logging the change.
+  - Close the panel with “×” to pause automation; it remains hidden until **Activate Overlay** is pressed again.
+  - Use **Clear** to wipe the persisted history and confirm new scans repopulate entries from both overlay and background storage.
+
+### Known Limitations
+- Gemini/Tavily usage depends on user-provided API keys and browser network availability.
+- Highly dynamic pages (heavy iframes/SaaS consoles) may not expose enough DOM metadata for reliable grounding.
+- The agent never auto-clicks; users must follow the visual guidance to progress.
 - Overlay persistence:
   - When the overlay panel is open, every navigation/SPA mutation is logged and persisted to `background.js`; full page reloads reinject the panel with history intact.
   - Clicking the panel’s **Clear** chip wipes both the visible log and the stored history; the panel only stays hidden across navigations if the user closes it with “×”.

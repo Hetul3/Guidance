@@ -1,3 +1,6 @@
+import { startAgent, stopAgent, resetAgent, getAgentStatus, handleScanEvent, handlePageChange } from './agent/orchestrator.js';
+import { clearRateLimiter } from './agent/rateLimiter.js';
+
 chrome.runtime.onInstalled.addListener(() => {
   console.log('WebGuide AI base extension installed.');
 });
@@ -20,6 +23,50 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
+  if (message.type && !message.type.startsWith('wga-log-entry')) {
+    console.debug('[WebGuideAI][background] Message received', { type: message.type });
+  }
+
+  if (message.type === 'wga-agent-start') {
+    console.debug('[WebGuideAI][background] Agent start requested', { goal: message.goal });
+    startAgent({ goal: message.goal, tabId: message.tabId, options: message.options })
+      .then(() => sendResponse?.({ ok: true }))
+      .catch((error) => {
+        console.error('[WebGuideAI][Agent] Failed to start:', error);
+        sendResponse?.({ ok: false, error: error.message });
+      });
+    return true;
+  }
+
+  if (message.type === 'wga-agent-stop') {
+    console.debug('[WebGuideAI][background] Agent stop requested');
+    stopAgent({ manual: Boolean(message.manual) })
+      .then(() => sendResponse?.({ ok: true }))
+      .catch((error) => sendResponse?.({ ok: false, error: error.message }));
+    return true;
+  }
+
+  if (message.type === 'wga-agent-reset') {
+    console.debug('[WebGuideAI][background] Agent reset requested');
+    clearRateLimiter();
+    resetAgent()
+      .then(() => sendResponse?.({ ok: true }))
+      .catch((error) => sendResponse?.({ ok: false, error: error.message }));
+    return true;
+  }
+
+  if (message.type === 'wga-agent-status') {
+    console.debug('[WebGuideAI][background] Agent status requested');
+    sendResponse?.({ ok: true, status: getAgentStatus() });
+    return true;
+  }
+
+  if (message.type === 'wga-scan-event') {
+    console.debug('[WebGuideAI][background] Scan event forwarded to agent', message.detail);
+    handleScanEvent(message.detail || {});
+    return false;
+  }
+
   const tabId = sender?.tab?.id;
   if (typeof tabId !== 'number' || tabId < 0) {
     return false;
@@ -29,6 +76,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   switch (message.type) {
     case 'wga-overlay-activated': {
+      console.debug('[WebGuideAI][background] Overlay activated', { tabId });
       activeOverlayTabs.add(tabId);
       state.active = true;
       state.closedManually = false;
@@ -37,14 +85,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     case 'wga-overlay-deactivated': {
+      console.debug('[WebGuideAI][background] Overlay deactivated', { tabId, closedManually: message.closedManually });
       activeOverlayTabs.delete(tabId);
       state.active = false;
-      state.closedManually = true;
+      state.closedManually = Boolean(message.closedManually);
       sendResponse?.({ ok: true, tracked: false });
       return true;
     }
 
     case 'wga-log-entry': {
+      console.debug('[WebGuideAI][background] Log entry received', { tabId });
       const entry = message.entry;
       if (entry && typeof entry === 'object') {
         const globalCrypto = (typeof globalThis !== 'undefined' && globalThis.crypto) ? globalThis.crypto : undefined;
@@ -71,6 +121,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     case 'wga-request-log': {
+      console.debug('[WebGuideAI][background] Log request', { tabId });
       sendResponse?.({
         ok: true,
         logs: [...(state.logs || [])],
@@ -81,6 +132,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     case 'wga-clear-log': {
+      console.debug('[WebGuideAI][background] Log cleared', { tabId });
       state.logs = [];
       sendResponse?.({ ok: true });
       return true;
@@ -123,6 +175,8 @@ const sendPageChangedToTab = (tabId, reason, url) => {
       }
     }
   );
+
+  handlePageChange({ tabId, url, reason });
 };
 
 const navigationFilter = { url: [{ schemes: ['http', 'https'] }] };
