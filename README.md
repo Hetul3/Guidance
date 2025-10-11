@@ -37,21 +37,15 @@ Load the extension:
 
 1. Browse to any `http(s)` page you want to automate or explore.
 2. Click the WebGuide AI toolbar icon to open the popup.
-3. **Overlay controls**
-   - *Activate Overlay*: injects the content script and opens the control panel on the page.
-   - *Run Overlay Demo*: shows the pulse/highlight demo (pulse now runs continuously until navigation).
-   - *Run DOM Snapshot*: triggers a scan and logs the element counts.
-4. **Configure APIs**
-   - Gemini: Paste your API key in *Gemini Access → Save Key*.
-   - Tavily (optional): Save your key in *Tavily Search → Save Key*.
-5. **Chat & search**
-   - Use the chat input for ad-hoc Gemini prompts (Markdown rendered safely).
-   - Tavily search supports advanced filters (time range, max results, content format, auto-parameters).
-6. **Run the agent**
-   - Enter a goal (e.g., “Find running shoes on Amazon”).
-   - Adjust search defaults if needed.
-   - Click **Start Agent**. Real-time logs stream in the new *Event Log* section showing planner/executor/tool traffic.
-   - Use **Stop** to halt (clears the goal and stops the overlay guidance) or **Reset** to fully clear history/logs.
+3. **Manage API keys**
+   - Keys are hidden by default. Click **Manage API Keys** in the popup footer to reveal the card.
+   - Paste your Gemini key (required) and, optionally, your Tavily key. Each field has a *Show/Hide* toggle and a close button to collapse the section when you’re done.
+   - If the agent encounters a missing/invalid key it auto-opens the relevant section and focuses the input.
+4. **Run the agent**
+   - Enter a goal (e.g., “Find discounted running shoes”).
+   - Adjust search defaults (time range, max results, chunks) if needed.
+   - Click **Start Agent**. The live *Event Log* streams planner/executor/tool events; the overlay uses continuous pulse & extended highlight cues until you move on.
+   - Use **Stop** to halt (and clear the goal) or **Reset** to wipe history/logs and unlock the Start button for a new goal.
 
 ## Repo Layout (key files)
 
@@ -60,15 +54,15 @@ Load the extension:
 - `overlay.js` + `styles/overlay.css` – Shadow DOM overlay components: persistent pulse, long-lived highlight, tooltips.
 - `dom-snapshot.js` – Element discovery, ranking, and registry management with mutation tracking.
 - `agent/` – Planner/executor loop (`orchestrator.js`), rate limiter with smart model fallback, tool definitions/validators, memory persistence.
-- `popup/` – Popup UI, API key storage, chat/search widgets, agent control panel, and live event log rendering.
+- `popup/` – Popup UI with the streamlined agent console, event log, and collapsible API key management.
 - `prompts/` – System prompts and JSON schemas fed to Gemini models.
 
 ## Development Notes
 
 - Commands/messages are routed via `chrome.runtime` message passing; check the background service worker console for agent logs prefixed with `[WebGuideAI][Agent]`.
-- The popup’s *Event Log* mirrors those logs in real-time using the new `wga-agent-log` broadcast events.
-- Rate limiter (`agent/rateLimiter.js`) detects 429/“too many requests” responses and cycles through configured models before surfacing an error.
-- Tests: `node tests/rateLimiter.smoke.mjs` runs a quick sanity check on the rate limiter model rotation.
+- The popup’s *Event Log* mirrors those logs via `wga-agent-log` broadcasts and is now backed by unit tests (`tests/popupKeys.test.mjs`).
+- Rate limiter (`agent/rateLimiter.js`) detects 429/“too many requests” responses and cycles through configured Gemini models before surfacing an error.
+- Tests: `node tests/rateLimiter.smoke.mjs` (rate limiter sanity) and `node --test tests/popupKeys.test.mjs` (popup API key UX) cover the current behaviour.
 
 ## Contributing
 

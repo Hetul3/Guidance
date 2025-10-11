@@ -1,34 +1,19 @@
-import { getTavilyKey, setTavilyKey } from '../storage.js';
-
-const activateButton = document.getElementById('activate-overlay');
-const overlayDemoButton = document.getElementById('run-overlay-demo');
-const domSnapshotButton = document.getElementById('run-dom-snapshot');
-const statusMessage = document.getElementById('status-message');
-const apiKeyInput = document.getElementById('gemini-api-key');
-const saveApiKeyButton = document.getElementById('save-api-key');
-const apiKeyStatus = document.getElementById('api-key-status');
-const userMessageInput = document.getElementById('gemini-user-message');
-const sendGeminiButton = document.getElementById('send-gemini-message');
-const geminiResponseBlock = document.getElementById('gemini-response');
-const geminiChatStatus = document.getElementById('gemini-chat-status');
-const tavilyKeyInputWrapper = document.getElementById('tavily-key-input-wrapper');
-const tavilyKeyPreviewRow = document.getElementById('tavily-key-preview');
+const manageKeysButton = document.getElementById('manage-keys');
+const apiKeysCard = document.getElementById('api-keys-card');
+const geminiKeySection = document.getElementById('gemini-key-section');
+const tavilyKeySection = document.getElementById('tavily-key-section');
+const geminiKeyInput = document.getElementById('gemini-api-key');
+const geminiKeyStatus = document.getElementById('api-key-status');
+const geminiCloseButton = document.getElementById('close-gemini-key');
 const tavilyKeyInput = document.getElementById('tavily-api-key');
-const saveTavilyKeyButton = document.getElementById('save-tavily-key');
-const updateTavilyKeyButton = document.getElementById('update-tavily-key');
-const tavilyKeyMask = document.getElementById('tavily-key-mask');
 const tavilyKeyStatus = document.getElementById('tavily-key-status');
-const tavilyQueryInput = document.getElementById('tavily-query');
-const tavilySearchButton = document.getElementById('run-tavily-search');
-const tavilyResultBlock = document.getElementById('tavily-result');
-const tavilySearchStatus = document.getElementById('tavily-search-status');
-const tavilyTimeRangeSelect = document.getElementById('tavily-time-range');
-const tavilyStartDateInput = document.getElementById('tavily-start-date');
-const tavilyEndDateInput = document.getElementById('tavily-end-date');
-const tavilyMaxResultsInput = document.getElementById('tavily-max-results');
-const tavilyChunksInput = document.getElementById('tavily-chunks-per-source');
-const tavilyRawContentSelect = document.getElementById('tavily-raw-content');
-const tavilyAutoParametersCheckbox = document.getElementById('tavily-auto-parameters');
+const tavilyCloseButton = document.getElementById('close-tavily-key');
+const saveGeminiKeyButton = document.getElementById('save-api-key');
+const saveTavilyKeyButton = document.getElementById('save-tavily-key');
+const geminiToggleMaskButton = document.getElementById('gemini-toggle-mask');
+const tavilyToggleMaskButton = document.getElementById('tavily-toggle-mask');
+
+const statusMessage = document.getElementById('status-message');
 
 const agentGoalInput = document.getElementById('agent-goal');
 const agentTimeRangeSelect = document.getElementById('agent-time-range');
@@ -44,12 +29,16 @@ const agentMessageLabel = document.getElementById('agent-message-label');
 const agentLogList = document.getElementById('agent-log-list');
 const agentLogClearButton = document.getElementById('agent-log-clear');
 
-let agentLogEntries = [];
+let hasGeminiKey = false;
+let hasTavilyKey = false;
+let apiKeysVisible = false;
 let agentControlsLocked = false;
 let lastSubmittedGoal = null;
-
-let tavilyRetryAfterSave = false;
-let lastTavilyRequest = null;
+let agentLogEntries = [];
+let geminiStoredValue = '';
+let geminiMasked = true;
+let tavilyStoredValue = '';
+let tavilyMasked = true;
 
 const runtimeSendMessage = (payload) =>
   new Promise((resolve, reject) => {
@@ -62,639 +51,209 @@ const runtimeSendMessage = (payload) =>
     });
   });
 
-const loadLlmModule = (() => {
-  let modulePromise;
-  return () => {
-    if (!modulePromise) {
-      const moduleUrl = chrome.runtime && chrome.runtime.getURL ? chrome.runtime.getURL('llm.js') : null;
-      if (!moduleUrl) {
-        return Promise.reject(new Error('Unable to resolve LLM module URL'));
-      }
-      modulePromise = import(moduleUrl).catch((error) => {
-        modulePromise = null;
-        throw error;
-      });
-    }
-    return modulePromise;
-  };
-})();
-
-const loadTavilyModule = (() => {
-  let modulePromise;
-  return () => {
-    if (!modulePromise) {
-      const moduleUrl = chrome.runtime && chrome.runtime.getURL ? chrome.runtime.getURL('tavily.js') : null;
-      if (!moduleUrl) {
-        return Promise.reject(new Error('Unable to resolve Tavily module URL'));
-      }
-      modulePromise = import(moduleUrl).catch((error) => {
-        modulePromise = null;
-        throw error;
-      });
-    }
-    return modulePromise;
-  };
-})();
-
-const maskKey = (value) => {
-  if (typeof value !== 'string' || !value.trim()) {
-    return '';
-  }
-
-  if (value.length <= 4) {
-    return '*'.repeat(value.length);
-  }
-
-  return `${'*'.repeat(Math.max(4, value.length - 4))}${value.slice(-4)}`;
-};
-
-const loadStoredApiKey = async () => {
-  if (!apiKeyInput) {
+const setStatus = (message, isError = false) => {
+  if (!statusMessage) {
     return;
   }
+  statusMessage.textContent = message || '';
+  statusMessage.style.color = isError ? '#b91c1c' : 'var(--text-secondary)';
+};
 
-  try {
-    const { GEMINI_API_KEY } = await chrome.storage.local.get(['GEMINI_API_KEY']);
-    if (typeof GEMINI_API_KEY === 'string' && GEMINI_API_KEY.trim()) {
-      apiKeyInput.dataset.hasValue = 'true';
-      apiKeyInput.value = maskKey(GEMINI_API_KEY.trim());
-    }
-  } catch (error) {
-    console.error('WebGuide AI: Failed to load stored API key.', error);
+const showApiKeysCard = (show = true) => {
+  apiKeysVisible = show;
+  if (apiKeysCard) {
+    apiKeysCard.hidden = !show;
+  }
+  if (manageKeysButton) {
+    manageKeysButton.textContent = show ? 'Hide API Keys' : 'Manage API Keys';
+  }
+  if (show) {
+    refreshKeyStatuses();
+    updateGeminiInputDisplay();
+    updateTavilyInputDisplay();
+  }
+  if (geminiCloseButton) {
+    geminiCloseButton.hidden = !show;
+  }
+  if (tavilyCloseButton) {
+    tavilyCloseButton.hidden = !show;
   }
 };
 
-const setApiStatus = (message, isError = false) => {
-  if (!apiKeyStatus) {
+const ensureApiKeysVisible = () => {
+  if (!apiKeysVisible) {
+    showApiKeysCard(true);
+  }
+};
+
+const setKeyStatusMessage = (element, message, isError = false) => {
+  if (!element) {
     return;
   }
-
   if (!message) {
-    apiKeyStatus.hidden = true;
-    apiKeyStatus.textContent = '';
+    element.hidden = true;
+    element.textContent = '';
     return;
   }
-
-  apiKeyStatus.hidden = false;
-  apiKeyStatus.textContent = message;
-  apiKeyStatus.style.color = isError ? '#b91c1c' : '#047857';
+  element.hidden = false;
+  element.textContent = message;
+  element.style.color = isError ? '#b91c1c' : '#10b981';
 };
 
-const handleSaveApiKey = async () => {
-  if (!apiKeyInput) {
+const focusInput = (input) => {
+  if (!input) {
     return;
   }
-
-  const rawValue = apiKeyInput.value || '';
-  const trimmed = rawValue.trim();
-
-  if (!trimmed || /^\*+$/.test(trimmed)) {
-    setApiStatus('Enter a valid key to save.', true);
-    return;
-  }
-
-  try {
-    setApiStatus('Saving key...');
-    await chrome.storage.local.set({ GEMINI_API_KEY: trimmed });
-    apiKeyInput.value = maskKey(trimmed);
-    apiKeyInput.dataset.hasValue = 'true';
-    setApiStatus('Gemini API key saved.');
-  } catch (error) {
-    console.error('WebGuide AI: Failed to save API key.', error);
-    setApiStatus('Failed to save key. See console.', true);
-  }
+  input.focus();
+  input.select?.();
 };
 
-if (saveApiKeyButton) {
-  saveApiKeyButton.addEventListener('click', handleSaveApiKey);
-}
-
-if (apiKeyInput) {
-  apiKeyInput.addEventListener('focus', () => {
-    if (apiKeyInput.dataset.hasValue === 'true') {
-      apiKeyInput.value = '';
-      apiKeyInput.dataset.hasValue = 'false';
+const updateGeminiInputDisplay = () => {
+  if (!geminiKeyInput) {
+    return;
+  }
+  if (geminiStoredValue) {
+    if (geminiMasked) {
+      geminiKeyInput.type = 'password';
+      geminiKeyInput.value = maskValue(geminiStoredValue);
+      geminiToggleMaskButton && (geminiToggleMaskButton.textContent = 'Show');
+    } else {
+      geminiKeyInput.type = 'text';
+      geminiKeyInput.value = geminiStoredValue;
+      geminiToggleMaskButton && (geminiToggleMaskButton.textContent = 'Hide');
     }
-    setApiStatus('');
-  });
-}
-
-const setTavilyKeyStatus = (message, isError = false) => {
-  if (!tavilyKeyStatus) {
-    return;
+  } else {
+    geminiKeyInput.type = 'password';
+    geminiKeyInput.value = '';
+    geminiToggleMaskButton && (geminiToggleMaskButton.textContent = 'Show');
   }
-
-  if (!message) {
-    tavilyKeyStatus.hidden = true;
-    tavilyKeyStatus.textContent = '';
-    return;
-  }
-
-  tavilyKeyStatus.hidden = false;
-  tavilyKeyStatus.textContent = message;
-  tavilyKeyStatus.style.color = isError ? '#b91c1c' : '#047857';
 };
 
-const showTavilyKeyInput = () => {
-  if (tavilyKeyInputWrapper) {
-    tavilyKeyInputWrapper.hidden = false;
-  }
-  if (tavilyKeyPreviewRow) {
-    tavilyKeyPreviewRow.hidden = true;
-  }
-  if (tavilyKeyInput) {
-    tavilyKeyInput.dataset.hasValue = 'false';
-    tavilyKeyInput.value = '';
-    tavilyKeyInput.type = 'password';
-    tavilyKeyInput.focus();
-  }
-  setTavilyKeyStatus('');
-};
-
-const showTavilyKeyPreview = (key) => {
-  if (tavilyKeyPreviewRow) {
-    tavilyKeyPreviewRow.hidden = false;
-  }
-  if (tavilyKeyInputWrapper) {
-    tavilyKeyInputWrapper.hidden = true;
-  }
-  if (tavilyKeyMask) {
-    tavilyKeyMask.textContent = maskKey(key);
-  }
-  if (tavilyKeyInput) {
-    tavilyKeyInput.dataset.hasValue = 'true';
-    tavilyKeyInput.value = maskKey(key);
-  }
-  setTavilyKeyStatus('');
-};
-
-const loadStoredTavilyKey = async () => {
-  try {
-    const storedKey = await getTavilyKey();
-    if (storedKey) {
-      showTavilyKeyPreview(storedKey);
-      return;
-    }
-  } catch (error) {
-    console.error('WebGuide AI: Failed to load Tavily key from storage.', error);
-  }
-
-  showTavilyKeyInput();
-};
-
-const handleSaveTavilyKey = async () => {
+const updateTavilyInputDisplay = () => {
   if (!tavilyKeyInput) {
     return;
   }
+  if (tavilyStoredValue) {
+    if (tavilyMasked) {
+      tavilyKeyInput.type = 'password';
+      tavilyKeyInput.value = maskValue(tavilyStoredValue);
+      tavilyToggleMaskButton && (tavilyToggleMaskButton.textContent = 'Show');
+    } else {
+      tavilyKeyInput.type = 'text';
+      tavilyKeyInput.value = tavilyStoredValue;
+      tavilyToggleMaskButton && (tavilyToggleMaskButton.textContent = 'Hide');
+    }
+  } else {
+    tavilyKeyInput.type = 'password';
+    tavilyKeyInput.value = '';
+    tavilyToggleMaskButton && (tavilyToggleMaskButton.textContent = 'Show');
+  }
+};
 
+const refreshKeyStatuses = () => {
+  if (hasGeminiKey) {
+    setKeyStatusMessage(geminiKeyStatus, 'Gemini key saved. Replace to update.');
+  } else {
+    setKeyStatusMessage(geminiKeyStatus, '');
+  }
+
+  if (hasTavilyKey) {
+    setKeyStatusMessage(tavilyKeyStatus, 'Tavily key saved. Replace to update.');
+  } else {
+    setKeyStatusMessage(tavilyKeyStatus, '');
+  }
+};
+
+const revealGeminiKey = (message) => {
+  ensureApiKeysVisible();
+  hasGeminiKey = false;
+  geminiStoredValue = '';
+  geminiMasked = true;
+  updateGeminiInputDisplay();
+  setKeyStatusMessage(geminiKeyStatus, message || 'Enter your Gemini API key to continue.', true);
+  focusInput(geminiKeyInput);
+};
+
+const revealTavilyKey = (message) => {
+  ensureApiKeysVisible();
+  hasTavilyKey = false;
+  tavilyStoredValue = '';
+  tavilyMasked = true;
+  updateTavilyInputDisplay();
+  setKeyStatusMessage(tavilyKeyStatus, message || 'Enter your Tavily API key to continue.', true);
+  focusInput(tavilyKeyInput);
+};
+
+const maskValue = (value) => {
+  if (typeof value !== 'string' || !value.trim()) {
+    return '';
+  }
+  if (value.length <= 4) {
+    return '*'.repeat(value.length);
+  }
+  return `${'*'.repeat(Math.max(4, value.length - 4))}${value.slice(-4)}`;
+};
+
+const loadStoredKeys = async () => {
+  try {
+    const { GEMINI_API_KEY, TAVILY_API_KEY } = await chrome.storage.local.get(['GEMINI_API_KEY', 'TAVILY_API_KEY']);
+    hasGeminiKey = typeof GEMINI_API_KEY === 'string' && GEMINI_API_KEY.trim().length > 0;
+    hasTavilyKey = typeof TAVILY_API_KEY === 'string' && TAVILY_API_KEY.trim().length > 0;
+    geminiStoredValue = hasGeminiKey ? GEMINI_API_KEY.trim() : '';
+    tavilyStoredValue = hasTavilyKey ? TAVILY_API_KEY.trim() : '';
+    geminiMasked = true;
+    tavilyMasked = true;
+    updateGeminiInputDisplay();
+    updateTavilyInputDisplay();
+    refreshKeyStatuses();
+  } catch (error) {
+    console.error('[WebGuideAI][Popup] Failed to load stored keys:', error);
+  }
+};
+
+const saveGeminiKey = async () => {
+  if (!geminiKeyInput) {
+    return;
+  }
+  const rawValue = geminiKeyInput.value || '';
+  const trimmed = rawValue.trim();
+  if (!trimmed) {
+    setKeyStatusMessage(geminiKeyStatus, 'Enter a valid key.', true);
+    return;
+  }
+  try {
+    await chrome.storage.local.set({ GEMINI_API_KEY: trimmed });
+    geminiStoredValue = trimmed;
+    geminiMasked = true;
+    hasGeminiKey = true;
+    updateGeminiInputDisplay();
+    setKeyStatusMessage(geminiKeyStatus, 'Gemini key saved.');
+  } catch (error) {
+    console.error('[WebGuideAI][Popup] Failed to save Gemini key:', error);
+    setKeyStatusMessage(geminiKeyStatus, 'Failed to save key. See console.', true);
+  }
+};
+
+const saveTavilyKey = async () => {
+  if (!tavilyKeyInput) {
+    return;
+  }
   const rawValue = tavilyKeyInput.value || '';
   const trimmed = rawValue.trim();
-
-  if (!trimmed || /^\*+$/.test(trimmed)) {
-    setTavilyKeyStatus('Enter a valid key to save.', true);
+  if (!trimmed) {
+    setKeyStatusMessage(tavilyKeyStatus, 'Enter a valid key.', true);
     return;
   }
-
   try {
-    setTavilyKeyStatus('Saving key...');
-    await setTavilyKey(trimmed);
-    showTavilyKeyPreview(trimmed);
-    setTavilyKeyStatus('Tavily API key saved.');
-
-    if (tavilyRetryAfterSave && lastTavilyRequest) {
-      tavilyRetryAfterSave = false;
-      await runTavilySearch(true);
-    }
+    await chrome.storage.local.set({ TAVILY_API_KEY: trimmed });
+    tavilyStoredValue = trimmed;
+    tavilyMasked = true;
+    hasTavilyKey = true;
+    updateTavilyInputDisplay();
+    setKeyStatusMessage(tavilyKeyStatus, 'Tavily key saved.');
   } catch (error) {
-    console.error('WebGuide AI: Failed to save Tavily key.', error);
-    setTavilyKeyStatus('Failed to save key. See console.', true);
-  }
-};
-
-if (saveTavilyKeyButton) {
-  saveTavilyKeyButton.addEventListener('click', handleSaveTavilyKey);
-}
-
-if (updateTavilyKeyButton) {
-  updateTavilyKeyButton.addEventListener('click', () => {
-    tavilyRetryAfterSave = false;
-    showTavilyKeyInput();
-  });
-}
-
-if (tavilyKeyInput) {
-  tavilyKeyInput.addEventListener('focus', () => {
-    if (tavilyKeyInput.dataset.hasValue === 'true') {
-      tavilyKeyInput.dataset.hasValue = 'false';
-      tavilyKeyInput.value = '';
-    }
-    setTavilyKeyStatus('');
-  });
-}
-
-const setChatStatus = (message, isError = false) => {
-  if (!geminiChatStatus) {
-    return;
-  }
-
-  geminiChatStatus.textContent = message || '';
-  geminiChatStatus.style.color = isError ? '#b91c1c' : '#6b7280';
-};
-
-const setGeminiResponse = (message, isError = false) => {
-  if (!geminiResponseBlock) {
-    return;
-  }
-
-  if (!message) {
-    geminiResponseBlock.textContent = 'Model responses appear here.';
-    geminiResponseBlock.classList.add('empty');
-    geminiResponseBlock.classList.remove('error');
-    return;
-  }
-
-  const parsed = window.marked ? window.marked.parse(message) : message;
-  const sanitized = window.DOMPurify ? window.DOMPurify.sanitize(parsed) : parsed;
-
-  geminiResponseBlock.innerHTML = sanitized;
-  geminiResponseBlock.classList.remove('empty');
-  geminiResponseBlock.classList.toggle('error', isError);
-
-  if (window.hljs && typeof window.hljs.highlightAll === 'function') {
-    window.hljs.highlightAll();
-  }
-};
-
-const setTavilySearchStatus = (message, isError = false) => {
-  if (!tavilySearchStatus) {
-    return;
-  }
-
-  tavilySearchStatus.textContent = message || '';
-  tavilySearchStatus.style.color = isError ? '#b91c1c' : '#6b7280';
-};
-
-const resetTavilyResult = () => {
-  if (!tavilyResultBlock) {
-    return;
-  }
-
-  tavilyResultBlock.classList.add('empty');
-  tavilyResultBlock.classList.remove('error');
-  tavilyResultBlock.textContent = 'Tavily answers appear here.';
-};
-
-const renderTavilyMessage = (message, isError = false) => {
-  if (!tavilyResultBlock) {
-    return;
-  }
-
-  tavilyResultBlock.classList.remove('empty');
-  tavilyResultBlock.classList.toggle('error', isError);
-  tavilyResultBlock.textContent = message;
-};
-
-const renderTavilyResult = (payload, rawContentFormat = 'text') => {
-  if (!tavilyResultBlock) {
-    return;
-  }
-
-  tavilyResultBlock.classList.remove('empty');
-  tavilyResultBlock.classList.remove('error');
-  tavilyResultBlock.textContent = '';
-
-  const fragment = document.createDocumentFragment();
-
-  if (payload?.answer) {
-    const answerHeading = document.createElement('h3');
-    answerHeading.textContent = 'Synthesised Answer';
-    const answerBody = document.createElement('p');
-    answerBody.textContent = payload.answer;
-    fragment.appendChild(answerHeading);
-    fragment.appendChild(answerBody);
-  }
-
-  if (Array.isArray(payload?.results) && payload.results.length > 0) {
-    payload.results.forEach((result, index) => {
-      const sourceHeading = document.createElement('h4');
-      sourceHeading.textContent = payload.results.length === 1 ? 'Top Source' : `Source ${index + 1}`;
-
-      const link = document.createElement('a');
-      const linkLabel = result.title || result.url || 'View source';
-      link.textContent = linkLabel;
-      if (result.url) {
-        link.href = result.url;
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
-      }
-
-      const linkWrapper = document.createElement('p');
-      linkWrapper.appendChild(link);
-
-      fragment.appendChild(sourceHeading);
-      fragment.appendChild(linkWrapper);
-
-      if (typeof result.score === 'number') {
-        const score = document.createElement('p');
-        score.classList.add('help-text');
-        score.textContent = `Relevance score: ${result.score.toFixed(3)}`;
-        fragment.appendChild(score);
-      }
-
-      if (result.content) {
-        const snippetsHeading = document.createElement('h5');
-        snippetsHeading.textContent = 'Content';
-        fragment.appendChild(snippetsHeading);
-
-        if (rawContentFormat === 'markdown' && window.marked) {
-          const html = window.marked.parse(result.content);
-          const sanitized = window.DOMPurify ? window.DOMPurify.sanitize(html) : html;
-          const markdownWrapper = document.createElement('div');
-          markdownWrapper.innerHTML = sanitized;
-          markdownWrapper.style.marginTop = '6px';
-          fragment.appendChild(markdownWrapper);
-        } else if (rawContentFormat === 'html') {
-          const sanitizedHtml = window.DOMPurify ? window.DOMPurify.sanitize(result.content) : result.content;
-          const htmlWrapper = document.createElement('div');
-          htmlWrapper.innerHTML = sanitizedHtml;
-          htmlWrapper.style.marginTop = '6px';
-          fragment.appendChild(htmlWrapper);
-        } else {
-          const contentBlock = document.createElement('pre');
-          contentBlock.textContent = result.content;
-          contentBlock.style.whiteSpace = 'pre-wrap';
-          contentBlock.style.margin = '6px 0 0';
-          contentBlock.style.fontFamily = 'inherit';
-          contentBlock.style.fontSize = '13px';
-          contentBlock.style.lineHeight = '1.55';
-          contentBlock.style.background = 'rgba(15, 23, 42, 0.04)';
-          contentBlock.style.border = '1px solid rgba(148, 163, 184, 0.35)';
-          contentBlock.style.borderRadius = '10px';
-          contentBlock.style.padding = '10px 12px';
-
-          fragment.appendChild(contentBlock);
-        }
-      }
-    });
-  }
-
-  if (!fragment.childNodes.length) {
-    const emptyMessage = document.createElement('p');
-    emptyMessage.textContent = '(Tavily returned no content.)';
-    fragment.appendChild(emptyMessage);
-  }
-
-  tavilyResultBlock.replaceChildren(fragment);
-
-  if (rawContentFormat !== 'text' && window.hljs && typeof window.hljs.highlightAll === 'function') {
-    window.hljs.highlightAll();
-  }
-};
-
-const setTavilySearchButtonLoading = (isLoading) => {
-  if (!tavilySearchButton) {
-    return;
-  }
-
-  tavilySearchButton.disabled = isLoading;
-  tavilySearchButton.textContent = isLoading ? 'Searching…' : 'Search';
-};
-
-const promptForKeyAndRetry = async (retryCallback) => {
-  if (!apiKeyInput) {
-    setApiStatus('Open the extension options to set an API key.', true);
-    return;
-  }
-
-  apiKeyInput.focus();
-  apiKeyInput.value = '';
-  apiKeyInput.dataset.hasValue = 'false';
-  setApiStatus('Enter your Gemini API key to continue.', true);
-
-  if (typeof retryCallback === 'function') {
-    const onSaveClick = async () => {
-      try {
-        await handleSaveApiKey();
-        await retryCallback();
-      } catch (error) {
-        console.error('WebGuide AI: Retry after API key save failed.', error);
-      }
-    };
-
-    saveApiKeyButton?.addEventListener('click', onSaveClick, { once: true });
-  }
-};
-
-const setSendButtonLoading = (isLoading) => {
-  if (!sendGeminiButton) {
-    return;
-  }
-
-  sendGeminiButton.disabled = isLoading;
-  sendGeminiButton.textContent = isLoading ? 'Sending…' : 'Send';
-};
-
-const sendGeminiMessage = async () => {
-  if (!userMessageInput) {
-    return;
-  }
-
-  const message = (userMessageInput.value || '').trim();
-  if (!message) {
-    setChatStatus('Enter a message to send.', true);
-    return;
-  }
-
-  setChatStatus('Sending…');
-  setGeminiResponse('');
-  setSendButtonLoading(true);
-
-  try {
-    const { sendToGemini, MissingApiKeyError, InvalidApiKeyError } = await loadLlmModule();
-
-    try {
-      const reply = await sendToGemini(message);
-      if (reply) {
-        setGeminiResponse(reply);
-      } else {
-        setGeminiResponse('(Gemini returned no text.)');
-      }
-      setChatStatus('Response received.');
-    } catch (error) {
-      if (error instanceof MissingApiKeyError || error instanceof InvalidApiKeyError) {
-        setChatStatus('');
-        setGeminiResponse(error.message, true);
-        await promptForKeyAndRetry(sendGeminiMessage);
-        return;
-      }
-
-      console.error('WebGuide AI: Gemini request failed.', error);
-      setGeminiResponse(`Error: ${error.message || error}`, true);
-      setChatStatus('Gemini error.');
-    }
-  } finally {
-    setSendButtonLoading(false);
-  }
-};
-
-if (sendGeminiButton) {
-  sendGeminiButton.addEventListener('click', sendGeminiMessage);
-}
-
-if (userMessageInput) {
-  userMessageInput.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-      event.preventDefault();
-      sendGeminiMessage();
-    }
-  });
-}
-
-const getDateInputValue = (input) => {
-  if (!input) {
-    return undefined;
-  }
-  const value = (input.value || '').trim();
-  return value || undefined;
-};
-
-const parseBoundedInteger = (value, min, max, fallback = null) => {
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed)) {
-    return fallback;
-  }
-  let clamped = parsed;
-  if (typeof min === 'number' && clamped < min) {
-    clamped = min;
-  }
-  if (typeof max === 'number' && clamped > max) {
-    clamped = max;
-  }
-  return clamped;
-};
-
-const runTavilySearch = async (isRetry = false) => {
-  if (!tavilyQueryInput) {
-    return;
-  }
-
-  let query;
-  let options;
-
-  if (isRetry && lastTavilyRequest) {
-    ({ query, options } = lastTavilyRequest);
-  } else {
-    query = (tavilyQueryInput.value || '').trim();
-
-    if (!query) {
-      setTavilySearchStatus('Enter a query to search.', true);
-      renderTavilyMessage('Enter a query to search.', true);
-      return;
-    }
-
-    const timeRange = tavilyTimeRangeSelect ? tavilyTimeRangeSelect.value : undefined;
-    const startDate = getDateInputValue(tavilyStartDateInput);
-    const endDate = getDateInputValue(tavilyEndDateInput);
-    const maxResults = tavilyMaxResultsInput ? parseBoundedInteger(tavilyMaxResultsInput.value, 1, 5, 1) : 1;
-    const chunksPerSource = tavilyChunksInput ? parseBoundedInteger(tavilyChunksInput.value, 1, 10, 3) : 3;
-    const requestedRawFormat = tavilyRawContentSelect ? tavilyRawContentSelect.value : 'text';
-    const allowedFormats = new Set(['text', 'markdown', 'html']);
-    const includeRawContent = allowedFormats.has(requestedRawFormat) ? requestedRawFormat : 'text';
-    const autoParameters = Boolean(tavilyAutoParametersCheckbox?.checked);
-
-    if (startDate && endDate && startDate > endDate) {
-      setTavilySearchStatus('Start date must be before end date.', true);
-      renderTavilyMessage('Start date must be before end date.', true);
-      return;
-    }
-
-    options = {
-      timeRange,
-      startDate,
-      endDate,
-      maxResults,
-      chunksPerSource,
-      includeRawContent,
-      autoParameters
-    };
-
-    lastTavilyRequest = { query, options: { ...options } };
-  }
-
-  options = options || {};
-
-  if (!isRetry) {
-    tavilyRetryAfterSave = false;
-  }
-
-  setTavilySearchStatus('Searching…');
-  resetTavilyResult();
-  setTavilySearchButtonLoading(true);
-
-  try {
-    const { tavilySearch, MissingTavilyKeyError, InvalidTavilyKeyError } = await loadTavilyModule();
-
-    try {
-      const result = await tavilySearch(query, options);
-      renderTavilyResult(result, options?.includeRawContent || 'text');
-      tavilyRetryAfterSave = false;
-      setTavilySearchStatus('Results ready.');
-    } catch (error) {
-      if (error instanceof MissingTavilyKeyError || error?.code === 'MissingTavilyKeyError') {
-        tavilyRetryAfterSave = true;
-        showTavilyKeyInput();
-        setTavilyKeyStatus('Enter your Tavily API key to continue.', true);
-        setTavilySearchStatus('');
-        renderTavilyMessage('Enter your Tavily API key to continue.', true);
-        return;
-      }
-
-      if (error instanceof InvalidTavilyKeyError || error?.code === 'InvalidTavilyKeyError') {
-        tavilyRetryAfterSave = true;
-        showTavilyKeyInput();
-        setTavilyKeyStatus('Your Tavily API key appears invalid. Please enter a new key.', true);
-        setTavilySearchStatus('');
-        renderTavilyMessage('Your Tavily API key appears invalid. Please enter a new key.', true);
-        return;
-      }
-
-      console.error('WebGuide AI: Tavily search failed.', error);
-      const message = typeof error?.message === 'string' ? error.message : 'Tavily request failed.';
-      setTavilySearchStatus('Tavily error.', true);
-      renderTavilyMessage(`Error: ${message}`, true);
-    }
-  } catch (error) {
-    console.error('WebGuide AI: Unable to load Tavily module.', error);
-    setTavilySearchStatus('Unable to load Tavily module.', true);
-    renderTavilyMessage(`Error: ${error.message || error}`, true);
-  } finally {
-    setTavilySearchButtonLoading(false);
-  }
-};
-
-if (tavilySearchButton) {
-  tavilySearchButton.addEventListener('click', () => runTavilySearch(false));
-}
-
-if (tavilyQueryInput) {
-  tavilyQueryInput.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-      event.preventDefault();
-      runTavilySearch(false);
-    }
-  });
-}
-
-const setAgentControlsBusy = (busy) => {
-  agentControlsLocked = busy;
-  if (agentStartButton) {
-    agentStartButton.disabled = busy;
-  }
-  if (agentStopButton) {
-    agentStopButton.disabled = busy;
-  }
-  if (agentResetButton) {
-    agentResetButton.disabled = busy;
+    console.error('[WebGuideAI][Popup] Failed to save Tavily key:', error);
+    setKeyStatusMessage(tavilyKeyStatus, 'Failed to save key. See console.', true);
   }
 };
 
@@ -710,7 +269,19 @@ const updateAgentButtons = (status) => {
   if (agentStopButton) {
     agentStopButton.disabled = !running;
   }
-  // Reset stays available unless explicitly locked.
+};
+
+const setAgentControlsBusy = (busy) => {
+  agentControlsLocked = busy;
+  if (agentStartButton) {
+    agentStartButton.disabled = busy;
+  }
+  if (agentStopButton) {
+    agentStopButton.disabled = busy;
+  }
+  if (agentResetButton) {
+    agentResetButton.disabled = busy;
+  }
 };
 
 const formatLogTimestamp = (timestamp) => {
@@ -732,96 +303,12 @@ const summariseLogDetail = (entry) => {
   }
   try {
     const json = JSON.stringify(clone, null, 2);
-    return json.length > 400 ? `${json.slice(0, 400)}…` : json;
+    return json.length > 300 ? `${json.slice(0, 300)}…` : json;
   } catch (_error) {
     return keys
       .map((key) => `${key}: ${typeof clone[key] === 'object' ? JSON.stringify(clone[key]) : clone[key]}`)
       .join(' | ');
   }
-};
-
-const ensureAgentLogList = () => {
-  if (!agentLogList) {
-    return null;
-  }
-  if (agentLogList.firstElementChild && agentLogList.firstElementChild.classList.contains('agent-log-empty')) {
-    agentLogList.removeChild(agentLogList.firstElementChild);
-  }
-  return agentLogList;
-};
-
-const createAgentLogElement = (entry) => {
-  const wrapper = document.createElement('div');
-  wrapper.className = 'agent-log-entry';
-
-  const header = document.createElement('div');
-  header.className = 'agent-log-entry-header';
-  const timeSpan = document.createElement('span');
-  timeSpan.textContent = formatLogTimestamp(entry.timestamp);
-  const stageSpan = document.createElement('span');
-  stageSpan.textContent = entry.stage || 'log';
-  header.append(timeSpan, stageSpan);
-
-  wrapper.appendChild(header);
-
-  const detail = summariseLogDetail(entry);
-  if (detail) {
-    const body = document.createElement('div');
-    body.className = 'agent-log-entry-body';
-    body.textContent = detail;
-    wrapper.appendChild(body);
-  }
-
-  return wrapper;
-};
-
-const appendAgentLogEntry = (entry, { persist = true } = {}) => {
-  const container = ensureAgentLogList();
-  if (!container || !entry || typeof entry !== 'object') {
-    return;
-  }
-
-  const exists = agentLogEntries.some((existing) => existing.id === entry.id);
-  if (persist) {
-    if (exists) {
-      return;
-    }
-    agentLogEntries.push(entry);
-    if (agentLogEntries.length > 200) {
-      const overflow = agentLogEntries.length - 200;
-      agentLogEntries = agentLogEntries.slice(-200);
-      for (let i = 0; i < overflow; i += 1) {
-        const lastChild = container.lastElementChild;
-        if (lastChild) {
-          container.removeChild(lastChild);
-        }
-      }
-    }
-  }
-
-  if (!exists || !persist) {
-    const element = createAgentLogElement(entry);
-    container.prepend(element);
-  }
-};
-
-const renderAgentLogEntries = (entries = []) => {
-  if (!agentLogList) {
-    return;
-  }
-  agentLogEntries = Array.isArray(entries) ? [...entries] : [];
-  agentLogList.innerHTML = '';
-  if (!agentLogEntries.length) {
-    const empty = document.createElement('div');
-    empty.className = 'agent-log-entry agent-log-empty';
-    empty.textContent = 'Logs appear here once the agent runs.';
-    agentLogList.appendChild(empty);
-    return;
-  }
-
-  agentLogEntries.forEach((entry) => {
-    appendAgentLogEntry(entry, { persist: false });
-  });
 };
 
 const clearAgentLogUI = () => {
@@ -836,31 +323,62 @@ const clearAgentLogUI = () => {
   agentLogList.appendChild(empty);
 };
 
-const applyAgentUpdate = (update = {}) => {
-  if (agentStatusLabel) {
-    agentStatusLabel.textContent = update.status || 'Idle';
+const renderAgentLogEntries = () => {
+  if (!agentLogList) {
+    return;
   }
-  if (agentModelLabel) {
-    agentModelLabel.textContent = update.lastModel || '–';
+  agentLogList.innerHTML = '';
+  if (!agentLogEntries.length) {
+    const empty = document.createElement('div');
+    empty.className = 'agent-log-entry agent-log-empty';
+    empty.textContent = 'Logs appear here once the agent runs.';
+    agentLogList.appendChild(empty);
+    return;
   }
-  if (agentToolLabel) {
-    agentToolLabel.textContent = update.lastTool || '–';
-  }
-  if (agentMessageLabel) {
-    const message = update.error || update.message || (update.awaitingInterrupt ? 'Awaiting page changes…' : '–');
-    agentMessageLabel.textContent = message;
-  }
-  updateAgentButtons(update.status);
+  const sorted = [...agentLogEntries].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+  sorted.reverse();
+  sorted.forEach((entry) => {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'agent-log-entry';
+
+    const header = document.createElement('div');
+    header.className = 'agent-log-entry-header';
+    const time = document.createElement('span');
+    time.textContent = formatLogTimestamp(entry.timestamp);
+    const stage = document.createElement('span');
+    stage.textContent = entry.stage || 'log';
+    header.append(time, stage);
+    wrapper.appendChild(header);
+
+    const detail = summariseLogDetail(entry);
+    if (detail) {
+      const body = document.createElement('div');
+      body.className = 'agent-log-entry-body';
+      body.textContent = detail;
+      wrapper.appendChild(body);
+    }
+
+    agentLogList.appendChild(wrapper);
+  });
 };
 
-const refreshAgentStatus = async () => {
-  try {
-    const res = await runtimeSendMessage({ type: 'wga-agent-status' });
-    if (res && res.ok) {
-      applyAgentUpdate(res.status || {});
-    }
-  } catch (error) {
-    console.error('[WebGuideAI][Popup] Failed to fetch agent status:', error);
+const appendAgentLogEntry = (entry) => {
+  if (!entry || typeof entry !== 'object') {
+    return;
+  }
+  if (!entry.id) {
+    entry.id = `${entry.stage || 'log'}-${entry.timestamp || Date.now()}`;
+  }
+  if (agentLogEntries.some((existing) => existing.id === entry.id)) {
+    return;
+  }
+  agentLogEntries.push(entry);
+  if (agentLogEntries.length > 200) {
+    agentLogEntries = agentLogEntries.slice(-200);
+  }
+  renderAgentLogEntries();
+  if (entry.error) {
+    handleAgentError(entry.error);
   }
 };
 
@@ -878,15 +396,79 @@ const collectAgentOptions = () => {
   return options;
 };
 
+const getActiveTab = async () => {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab || tab.id === undefined) {
+      setStatus('No active tab detected.', true);
+      return null;
+    }
+    const url = tab.url || '';
+    if (!/^https?:/i.test(url)) {
+      setStatus('Open an https page, then try again.', true);
+      return null;
+    }
+    return tab;
+  } catch (error) {
+    console.error('[WebGuideAI][Popup] Failed to query active tab:', error);
+    setStatus('Failed to detect active tab.', true);
+    return null;
+  }
+};
+
+const applyAgentUpdate = (update = {}) => {
+  if (agentStatusLabel) {
+    agentStatusLabel.textContent = update.status || 'Idle';
+  }
+  if (agentModelLabel) {
+    agentModelLabel.textContent = update.lastModel || '–';
+  }
+  if (agentToolLabel) {
+    agentToolLabel.textContent = update.lastTool || '–';
+  }
+  if (agentMessageLabel) {
+    const message = update.error || update.message || (update.awaitingInterrupt ? 'Awaiting page changes…' : '–');
+    agentMessageLabel.textContent = message;
+  }
+  updateAgentButtons(update.status);
+  if (update.error) {
+    handleAgentError(update.error);
+  }
+};
+
+const refreshAgentStatus = async () => {
+  try {
+    const res = await runtimeSendMessage({ type: 'wga-agent-status' });
+    if (res && res.ok) {
+      applyAgentUpdate(res.status || {});
+    }
+  } catch (error) {
+    console.error('[WebGuideAI][Popup] Failed to fetch agent status:', error);
+  }
+};
+
 const loadAgentLogs = async () => {
   try {
     const res = await runtimeSendMessage({ type: 'wga-agent-get-logs' });
     if (res && res.ok && Array.isArray(res.logs)) {
-      agentLogEntries = res.logs;
-      renderAgentLogEntries(agentLogEntries);
+      agentLogEntries = res.logs.slice(-200);
+      renderAgentLogEntries();
     }
   } catch (error) {
     console.error('[WebGuideAI][Popup] Failed to fetch agent logs:', error);
+  }
+};
+
+const handleAgentError = (message) => {
+  if (!message || typeof message !== 'string') {
+    return;
+  }
+  const lower = message.toLowerCase();
+  if (lower.includes('gemini') && lower.includes('api key')) {
+    revealGeminiKey(message);
+  }
+  if (lower.includes('tavily') && lower.includes('api key')) {
+    revealTavilyKey(message);
   }
 };
 
@@ -897,18 +479,18 @@ const handleAgentStart = async () => {
     return;
   }
 
-  if (lastSubmittedGoal && goal === lastSubmittedGoal) {
+  if (lastSubmittedGoal && lastSubmittedGoal === goal) {
     applyAgentUpdate({ status: 'error', message: 'Modify the goal before starting again.' });
     return;
   }
 
   const tab = await getActiveTab();
   if (!tab) {
-    applyAgentUpdate({ status: 'error', message: 'No active tab detected.' });
     return;
   }
 
   setAgentControlsBusy(true);
+  setStatus('Starting agent…');
   try {
     const response = await runtimeSendMessage({
       type: 'wga-agent-start',
@@ -920,10 +502,12 @@ const handleAgentStart = async () => {
       throw new Error(response?.error || 'Failed to start agent.');
     }
     applyAgentUpdate({ status: 'running', message: 'Agent starting…' });
+    setStatus('Agent running.');
     lastSubmittedGoal = goal;
   } catch (error) {
     console.error('[WebGuideAI][Popup] Agent start failed:', error);
     applyAgentUpdate({ status: 'error', message: error.message });
+    setStatus(error.message || 'Agent failed to start.', true);
   } finally {
     setAgentControlsBusy(false);
     updateAgentButtons(agentStatusLabel?.textContent || '');
@@ -932,9 +516,11 @@ const handleAgentStart = async () => {
 
 const handleAgentStop = async () => {
   setAgentControlsBusy(true);
+  setStatus('Stopping agent…');
   try {
     await runtimeSendMessage({ type: 'wga-agent-stop', manual: true });
     applyAgentUpdate({ status: 'stopped', message: 'Agent stopped.' });
+    setStatus('Agent stopped.');
     lastSubmittedGoal = null;
     if (agentGoalInput) {
       agentGoalInput.value = '';
@@ -942,6 +528,7 @@ const handleAgentStop = async () => {
   } catch (error) {
     console.error('[WebGuideAI][Popup] Agent stop failed:', error);
     applyAgentUpdate({ status: 'error', message: error.message });
+    setStatus(error.message || 'Failed to stop agent.', true);
   } finally {
     setAgentControlsBusy(false);
     updateAgentButtons(agentStatusLabel?.textContent || '');
@@ -950,10 +537,12 @@ const handleAgentStop = async () => {
 
 const handleAgentReset = async () => {
   setAgentControlsBusy(true);
+  setStatus('Resetting agent…');
   try {
     await runtimeSendMessage({ type: 'wga-agent-reset' });
     applyAgentUpdate({ status: 'idle', message: 'Session reset.' });
     clearAgentLogUI();
+    setStatus('Agent reset.');
     lastSubmittedGoal = null;
     if (agentGoalInput) {
       agentGoalInput.value = '';
@@ -961,190 +550,81 @@ const handleAgentReset = async () => {
   } catch (error) {
     console.error('[WebGuideAI][Popup] Agent reset failed:', error);
     applyAgentUpdate({ status: 'error', message: error.message });
+    setStatus(error.message || 'Failed to reset agent.', true);
   } finally {
     setAgentControlsBusy(false);
     updateAgentButtons(agentStatusLabel?.textContent || '');
   }
 };
 
-if (agentStartButton) {
-  agentStartButton.addEventListener('click', handleAgentStart);
-}
-
-if (agentStopButton) {
-  agentStopButton.addEventListener('click', handleAgentStop);
-}
-
-if (agentResetButton) {
-  agentResetButton.addEventListener('click', handleAgentReset);
-}
-
-if (agentLogClearButton) {
-  agentLogClearButton.addEventListener('click', async () => {
-    try {
-      await runtimeSendMessage({ type: 'wga-agent-clear-log' });
-      clearAgentLogUI();
-    } catch (error) {
-      console.error('[WebGuideAI][Popup] Failed to clear agent logs:', error);
-    }
-  });
-}
-
-const setStatus = (message, isError = false) => {
-  if (!statusMessage) {
-    return;
-  }
-
-  statusMessage.textContent = message;
-  statusMessage.style.color = isError ? '#b91c1c' : '#1f2933';
-};
-
-const getActiveTab = async () => {
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-    if (!tab || tab.id === undefined) {
-      console.warn('WebGuide AI: No active tab available.');
-      setStatus('No active tab detected.');
-      return null;
-    }
-
-    const url = tab.url || '';
-    if (!/^https?:/i.test(url)) {
-      setStatus('Open a standard web page, then try again.', true);
-      return null;
-    }
-
-    return tab;
-  } catch (error) {
-    console.error('WebGuide AI: Failed to query active tab.', error);
-    setStatus('Chrome tab query failed. See console for details.', true);
-    return null;
+const toggleApiKeys = () => {
+  showApiKeysCard(!apiKeysVisible);
+  if (apiKeysVisible) {
+    focusInput(geminiKeyInput);
   }
 };
 
-const sendMessageToTab = (tabId, payload) =>
-  new Promise((resolve, reject) => {
-    chrome.tabs.sendMessage(tabId, payload, (response) => {
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
-        return;
-      }
-      resolve(response);
-    });
-  });
-
-async function injectOverlay() {
+const clearAgentLogsRemote = async () => {
   try {
-    const tab = await getActiveTab();
-    if (!tab) {
-      return;
-    }
-
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      files: ['content-script.js']
-    });
-
-    try {
-      await sendMessageToTab(tab.id, { type: 'wga-show-overlay', reason: 'manual-activate', skipLogSync: true });
-      setStatus('Overlay activated.');
-    } catch (messageError) {
-      setStatus('Overlay injected.');
-    }
+    await runtimeSendMessage({ type: 'wga-agent-clear-log' });
+    clearAgentLogUI();
   } catch (error) {
-    console.error('WebGuide AI: Failed to inject overlay.', error);
-    setStatus('Could not inject overlay. See console for details.', true);
-  }
-}
-
-if (activateButton) {
-  activateButton.addEventListener('click', injectOverlay);
-}
-
-const runOverlayDemo = async () => {
-  const tab = await getActiveTab();
-  if (!tab) {
-    return;
-  }
-
-  setStatus('Running overlay demo...');
-
-  try {
-    const response = await sendMessageToTab(tab.id, { type: 'wga-run-overlay-demo' });
-
-    if (response && response.ok) {
-      setStatus('Overlay demo complete.');
-    } else {
-      setStatus('Overlay demo finished with warnings.', true);
-    }
-  } catch (error) {
-    if (/Receiving end does not exist/i.test(error.message)) {
-      setStatus('Inject overlay first, then run the demo.', true);
-      return;
-    }
-
-    console.error('WebGuide AI: Overlay demo failed.', error);
-    setStatus('Overlay demo failed. See console for details.', true);
+    console.error('[WebGuideAI][Popup] Failed to clear agent logs:', error);
   }
 };
 
-if (overlayDemoButton) {
-  overlayDemoButton.addEventListener('click', runOverlayDemo);
-}
-
-const runDomSnapshot = async () => {
-  const tab = await getActiveTab();
-  if (!tab) {
-    return;
-  }
-
-  setStatus('Collecting clickable elements...');
-
-  try {
-    const response = await sendMessageToTab(tab.id, { type: 'wga-run-dom-snapshot' });
-
-    if (response && response.ok) {
-      const rawCount = typeof response.rawCount === 'number' ? response.rawCount : 'unknown';
-      const llmCount = typeof response.llmCount === 'number' ? response.llmCount : 'unknown';
-      setStatus(`Snapshot captured (raw: ${rawCount}, llm: ${llmCount})`);
-    } else {
-      setStatus('DOM snapshot completed with notices.', true);
-    }
-  } catch (error) {
-    if (/Receiving end does not exist/i.test(error.message)) {
-      setStatus('Inject overlay/content script before running snapshot.', true);
-      return;
-    }
-
-    console.error('WebGuide AI: DOM snapshot failed.', error);
-    setStatus('DOM snapshot failed. See console for details.', true);
-  }
-};
-
-if (domSnapshotButton) {
-  domSnapshotButton.addEventListener('click', runDomSnapshot);
-}
-
-loadStoredApiKey();
-refreshAgentStatus();
-loadAgentLogs();
-
-chrome.runtime.onMessage.addListener((message) => {
+const handleRuntimeMessage = (message) => {
   if (!message || typeof message !== 'object') {
     return;
   }
 
   if (message.type === 'wga-agent-update') {
     applyAgentUpdate(message.data || {});
+    return;
   }
 
   if (message.type === 'wga-agent-log' && message.log) {
     appendAgentLogEntry(message.log);
+    return;
   }
 
   if (message.type === 'wga-agent-log-cleared') {
     clearAgentLogUI();
   }
+};
+
+manageKeysButton?.addEventListener('click', toggleApiKeys);
+geminiCloseButton?.addEventListener('click', () => showApiKeysCard(false));
+tavilyCloseButton?.addEventListener('click', () => showApiKeysCard(false));
+geminiToggleMaskButton?.addEventListener('click', () => {
+  if (!geminiStoredValue) {
+    geminiMasked = true;
+    updateGeminiInputDisplay();
+    focusInput(geminiKeyInput);
+    return;
+  }
+  geminiMasked = !geminiMasked;
+  updateGeminiInputDisplay();
 });
-loadStoredTavilyKey();
+tavilyToggleMaskButton?.addEventListener('click', () => {
+  if (!tavilyStoredValue) {
+    tavilyMasked = true;
+    updateTavilyInputDisplay();
+    focusInput(tavilyKeyInput);
+    return;
+  }
+  tavilyMasked = !tavilyMasked;
+  updateTavilyInputDisplay();
+});
+saveGeminiKeyButton?.addEventListener('click', saveGeminiKey);
+saveTavilyKeyButton?.addEventListener('click', saveTavilyKey);
+agentStartButton?.addEventListener('click', handleAgentStart);
+agentStopButton?.addEventListener('click', handleAgentStop);
+agentResetButton?.addEventListener('click', handleAgentReset);
+agentLogClearButton?.addEventListener('click', clearAgentLogsRemote);
+
+chrome.runtime.onMessage.addListener(handleRuntimeMessage);
+
+loadStoredKeys();
+refreshAgentStatus();
+loadAgentLogs();
