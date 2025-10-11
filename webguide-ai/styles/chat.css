@@ -1,14 +1,30 @@
 :root {
-  --chat-heading-color: inherit;
-  --chat-text-color: inherit;
-  --chat-muted: rgba(71, 85, 105, 0.78);
-  --chat-border: rgba(148, 163, 184, 0.35);
-  --chat-quote-border: rgba(99, 102, 241, 0.35);
-  --chat-code-bg: rgba(15, 23, 42, 0.08);
-  --chat-inline-code-bg: rgba(148, 163, 184, 0.18);
-  --chat-table-header-bg: rgba(99, 102, 241, 0.08);
-  --chat-task-unchecked: rgba(148, 163, 184, 0.65);
-  --chat-task-checked: #10b981;
+  --chat-heading-color: var(--text-primary, #F9FAFB);
+  --chat-text-color: var(--text-primary, #F9FAFB);
+  --chat-muted: rgba(161, 161, 170, 0.85);
+  --chat-border: var(--border, rgba(43, 47, 54, 0.7));
+  --chat-quote-border: rgba(59, 130, 246, 0.32);
+  --chat-quote-bg: rgba(30, 33, 39, 0.65);
+  --chat-code-bg: rgba(23, 26, 31, 0.8);
+  --chat-inline-code-bg: rgba(59, 130, 246, 0.18);
+  --chat-table-header-bg: rgba(30, 64, 175, 0.22);
+  --chat-task-unchecked: rgba(161, 161, 170, 0.75);
+  --chat-task-checked: var(--success, #22C55E);
+  --chat-link: var(--accent, #3B82F6);
+  --chat-link-hover: var(--accent-hover, #2563EB);
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --chat-muted: rgba(119, 131, 152, 0.85);
+    --chat-border: var(--border, rgba(212, 216, 229, 0.9));
+    --chat-quote-border: rgba(59, 130, 246, 0.28);
+    --chat-quote-bg: rgba(233, 238, 250, 0.75);
+    --chat-code-bg: rgba(237, 241, 250, 0.95);
+    --chat-inline-code-bg: rgba(59, 130, 246, 0.16);
+    --chat-table-header-bg: rgba(226, 232, 240, 0.8);
+    --chat-task-unchecked: rgba(148, 163, 184, 0.76);
+  }
 }
 
 .chat-markdown {
@@ -19,7 +35,7 @@
 }
 
 .chat-markdown.error {
-  color: #b91c1c;
+  color: var(--danger, #EF4444);
 }
 
 .chat-markdown h1,
@@ -78,11 +94,12 @@
 }
 
 .chat-markdown a {
-  color: #2563eb;
+  color: var(--chat-link);
   text-decoration: none;
 }
 
 .chat-markdown a:hover {
+  color: var(--chat-link-hover);
   text-decoration: underline;
 }
 
@@ -115,7 +132,7 @@
   margin: 10px 0;
   padding: 8px 12px;
   border-left: 3px solid var(--chat-quote-border);
-  background: rgba(99, 102, 241, 0.08);
+  background: var(--chat-quote-bg);
   border-radius: 10px;
   color: var(--chat-muted);
 }

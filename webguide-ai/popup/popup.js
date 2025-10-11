@@ -16,12 +16,15 @@ const tavilyToggleMaskButton = document.getElementById('tavily-toggle-mask');
 const statusMessage = document.getElementById('status-message');
 
 const agentGoalInput = document.getElementById('agent-goal');
+const agentAdvancedToggle = document.getElementById('agent-advanced-toggle');
+const agentAdvancedSection = document.getElementById('agent-advanced');
 const agentTimeRangeSelect = document.getElementById('agent-time-range');
 const agentMaxResultsInput = document.getElementById('agent-max-results');
 const agentChunksInput = document.getElementById('agent-chunks');
 const agentStartButton = document.getElementById('agent-start');
 const agentStopButton = document.getElementById('agent-stop');
 const agentResetButton = document.getElementById('agent-reset');
+const agentStatusLine = document.getElementById('agent-status-line');
 const agentStatusLabel = document.getElementById('agent-status-label');
 const agentModelLabel = document.getElementById('agent-model-label');
 const agentToolLabel = document.getElementById('agent-tool-label');
@@ -56,7 +59,7 @@ const setStatus = (message, isError = false) => {
     return;
   }
   statusMessage.textContent = message || '';
-  statusMessage.style.color = isError ? '#b91c1c' : 'var(--text-secondary)';
+  statusMessage.style.color = isError ? 'var(--danger)' : 'var(--text-secondary)';
 };
 
 const showApiKeysCard = (show = true) => {
@@ -97,7 +100,7 @@ const setKeyStatusMessage = (element, message, isError = false) => {
   }
   element.hidden = false;
   element.textContent = message;
-  element.style.color = isError ? '#b91c1c' : '#10b981';
+  element.style.color = isError ? 'var(--danger)' : 'var(--success)';
 };
 
 const focusInput = (input) => {
@@ -417,8 +420,15 @@ const getActiveTab = async () => {
 };
 
 const applyAgentUpdate = (update = {}) => {
+  const statusTextRaw = update.status ?? 'Idle';
+  const statusText = typeof statusTextRaw === 'string' ? statusTextRaw : String(statusTextRaw);
+  const statusState = statusText.trim().toLowerCase();
   if (agentStatusLabel) {
-    agentStatusLabel.textContent = update.status || 'Idle';
+    agentStatusLabel.textContent = statusText;
+    agentStatusLabel.dataset.state = statusState;
+  }
+  if (agentStatusLine) {
+    agentStatusLine.dataset.state = statusState;
   }
   if (agentModelLabel) {
     agentModelLabel.textContent = update.lastModel || '–';
@@ -430,7 +440,7 @@ const applyAgentUpdate = (update = {}) => {
     const message = update.error || update.message || (update.awaitingInterrupt ? 'Awaiting page changes…' : '–');
     agentMessageLabel.textContent = message;
   }
-  updateAgentButtons(update.status);
+  updateAgentButtons(statusText);
   if (update.error) {
     handleAgentError(update.error);
   }
@@ -564,6 +574,19 @@ const toggleApiKeys = () => {
   }
 };
 
+const toggleAdvancedOptions = () => {
+  if (!agentAdvancedToggle || !agentAdvancedSection) {
+    return;
+  }
+  const isHidden = agentAdvancedSection.hasAttribute('hidden');
+  if (isHidden) {
+    agentAdvancedSection.removeAttribute('hidden');
+  } else {
+    agentAdvancedSection.setAttribute('hidden', '');
+  }
+  agentAdvancedToggle.setAttribute('aria-expanded', String(isHidden));
+};
+
 const clearAgentLogsRemote = async () => {
   try {
     await runtimeSendMessage({ type: 'wga-agent-clear-log' });
@@ -622,6 +645,7 @@ agentStartButton?.addEventListener('click', handleAgentStart);
 agentStopButton?.addEventListener('click', handleAgentStop);
 agentResetButton?.addEventListener('click', handleAgentReset);
 agentLogClearButton?.addEventListener('click', clearAgentLogsRemote);
+agentAdvancedToggle?.addEventListener('click', toggleAdvancedOptions);
 
 chrome.runtime.onMessage.addListener(handleRuntimeMessage);
 
